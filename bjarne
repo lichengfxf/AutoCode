@@ -250,225 +250,227 @@ IMAGE_NAME=""
 #==============================================================================
 
 read -r -d '' PLAN_PROMPT << 'PLAN_EOF' || true
-# PLAN STEP
+# 规划阶段
 
-**IMPORTANT: This is step 1 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - your output feeds into the next step
-- Do NOT ask questions or request clarification - work with what you have
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第1步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入下一步
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
 
-You are planning ONE task from TASKS.md.
+你正在从 TASKS.md 中规划**一个**任务。
 
-## Your Job
-1. Read CONTEXT.md for project info and commands
-2. Read TASKS.md - find the FIRST unchecked `- [ ]` task
-   - **CRITICAL**: Only plan tasks marked `- [ ]` (unchecked)
-   - Skip any task marked `- [x]` (already complete)
-3. **Parse the task**: Extract ACTION and OUTCOME (format: `Action → Outcome`)
-4. Read specs/ folder for detailed specifications
-5. Search the codebase for existing patterns, utilities, components
-6. Write a plan to .task file
+## 你的任务
+1. 阅读 CONTEXT.md 获取项目信息和命令
+2. 阅读 TASKS.md - 找到第一个未选中的 `- [ ]` 任务
+   - **关键**：只规划标记为 `- [ ]` 的任务
+   - 跳过标记为 `- [x]` 的任务（已完成）
+3. **解析任务**：提取任务中的 Action 和 Outcome （任务格式：`Action → Outcome`）
+4. 阅读 specs/ 文件夹中的详细规范
+5. 搜索代码库中的现有模式、工具、组件
+6. 将计划写入 .task 文件
 
-## STOP: Verify Task Is Actually Unchecked
-Before planning, CONFIRM the task line starts with `- [ ]` (space between brackets).
-If it starts with `- [x]`, it's ALREADY DONE - do not plan it, do not create .task file.
+## 停止：验证任务是否确实未选中
+规划之前，确认任务行以 `- [ ]` 开头（括号之间有空格）。
+如果以 `- [x]` 开头，表示已完成 - 不要规划它，不要创建 .task 文件。
 
-## Write to .task file:
+## 写入 .task 文件：
 ```
-TASK: [exact task text from TASKS.md]
-ACTION: [what to implement]
-EXPECTED_OUTCOME: [how to verify success - from the → part]
+TASK: [TASKS.md 中的确切任务文本]
+ACTION: [要实现什么]
+EXPECTED_OUTCOME: [如何验证成功 - 来自 → 部分]
 
 EXISTING_CODE:
-- [file/function to reuse]
+- [可复用的文件/函数]
 
 PATTERNS:
-- [pattern from codebase to follow]
+- [代码库中要遵循的模式]
 
 PLAN:
-1. [specific step]
-2. [specific step]
+1. [具体步骤]
+2. [具体步骤]
 
-FILES_TO_CREATE: [list]
-FILES_TO_MODIFY: [list]
-TEST_COMMAND: [from CONTEXT.md or detected]
+FILES_TO_CREATE: [列表]
+FILES_TO_MODIFY: [列表]
+TEST_COMMAND: [来自 CONTEXT.md 或检测到的命令]
 
 OUTCOME_VERIFICATION:
-- [specific check to confirm outcome, e.g., "grep for button with href=/login"]
-- [curl command, file check, or code inspection to verify]
+- [具体检查以确认结果，例如 "grep 查找带 href=/login 的按钮"]
+- [curl 命令、文件检查或代码审查以验证]
 ```
 
-## Architecture Principles
-- REUSE existing code - search first
-- EXTEND existing files when logical
-- ONE clear responsibility per file
-- Follow existing patterns in codebase
-- Match existing code style
+## 架构原则
+- 复用现有代码 - 先搜索
+- 合理时扩展现有文件
+- 每个文件单一明确职责
+- 遵循代码库中的现有模式
+- 匹配现有代码风格
 
-DO NOT implement. Just plan.
+不要实现。只做规划。
 PLAN_EOF
 
 read -r -d '' EXECUTE_PROMPT << 'EXEC_EOF' || true
-# EXECUTE STEP
+# 执行阶段
 
-**IMPORTANT: This is step 2 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - just implement the plan
-- Do NOT ask questions or request approval - execute the plan
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第2步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 只需实现计划
+- 不要提问或请求批准 - 执行计划
+- 直接、实事求是 - 不需要客套话
 
-Read .task file. Follow the plan exactly.
+阅读 .task 文件。严格按照计划执行。
 
-**Your primary job is IMPLEMENTATION - use Write and Edit tools to create/modify files.**
-The PLAN phase already researched the codebase. Trust the plan's EXISTING_CODE and PATTERNS.
-You may read files when needed for implementation, but prioritize writing code over exploration.
+**你的主要工作是实现 - 使用 Write 和 Edit 工具创建/修改文件。**
+规划阶段已经研究过代码库。信任计划中的 EXISTING_CODE 和 PATTERNS。
+实现时可以阅读文件，但要优先写代码而不是探索。
 
-## Rules
-- Follow the PLAN steps in order
-- REUSE code listed in EXISTING_CODE
-- Follow PATTERNS for consistency
-- Match existing code style in the project
-- Clear names, no abbreviations
-- Handle errors meaningfully
+## 规则
+- 按顺序执行 PLAN 步骤
+- 复用 EXISTING_CODE 中列出的代码
+- 遵循 PATTERNS 保持一致性
+- 匹配项目中的现有代码风格
+- 命名清晰，不要缩写
+- 妥善处理错误和异常
 
-## Code Quality (adapt to project's tech stack)
-- Keep functions focused (single responsibility)
-- Keep files cohesive (related code together)
-- Comments explain WHY not WHAT
+## 代码质量（适应项目的技术栈）
+- 保持函数聚焦（单一职责）
+- 保持文件内聚（相关代码放在一起）
+- 保持高内聚低耦合的设计思想
+- 注释解释'为什么'而不是 '是什么'
+- 有完善的错误日志和调试日志
 
-## When Done
-Mark the task complete in TASKS.md with a short note if you learned something useful:
-- Simple completion: `- [x] Task description`
-- With note: `- [x] Task description → Note: [one-line insight]`
+## 完成时
+在 TASKS.md 中标记任务完成，如果学到了有用的东西可以加简短备注：
+- 简单完成：`- [x] 任务描述`
+- 带备注：`- [x] 任务描述 → 备注：[一行见解]`
 
-Only add a note if it would help future tasks (e.g., "used X instead of Y", "requires Z first").
+只有在有助于未来任务时才添加备注（例如"用了 X 而不是 Y"、"需要先完成 Z"）。
 
-Then commit: "feat: [task description]"
+然后提交代码："feat: [任务描述]"
 EXEC_EOF
 
 read -r -d '' REVIEW_PROMPT << 'REVIEW_EOF' || true
-# REVIEW STEP
+# review阶段
 
-**IMPORTANT: This is step 3 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - your output feeds directly into the FIX step
-- Do NOT ask questions like "Would you like me to fix this?"
-- Do NOT offer to make changes - just document findings
-- The FIX step will automatically process everything you report
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第3步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入修复阶段
+- 不要问"你想让我修复这个吗？"这类问题
+- 不要主动提出修改 - 只需记录发现
+- 修复阶段会自动处理你报告的所有内容
+- 直接、实事求是 - 不需要客套话
 
-Review implementation against .task plan.
+根据 .task 计划评审实现结果。
 
-## 1. VERIFY OUTCOME FIRST (Most Important!)
-Read EXPECTED_OUTCOME and OUTCOME_VERIFICATION from .task file.
-Actually run the verification steps to confirm the outcome was achieved:
-- If it says "button exists with href=/login" → grep/search for it
-- If it says "API returns 200" → curl the endpoint
-- If it says "error message shows" → check the component renders it
-- If it says "file created at X" → verify file exists
+## 1. 首先验证结果（最重要！）
+从 .task 文件中阅读 EXPECTED_OUTCOME 和 OUTCOME_VERIFICATION。
+实际运行验证步骤以确认结果达成, 例如：
+- 如果说"按钮存在且 href=/login" → grep/搜索它
+-如果说"API 返回 200" → curl 端点
+- 如果说"显示错误消息" → 检查组件是否渲染它
+- 如果说"文件创建于 X" → 验证文件存在
 
-**If outcome NOT achieved**: This is a 🔴 BLOCKER - the task isn't done.
-**If outcome achieved**: Continue to code quality checks.
+**如果结果未达成**：这是 🔴 BLOCKERS - 任务未完成。
+**如果结果达成**：继续代码质量检查。
 
-## 2. Check Plan Compliance
-- Was EXISTING_CODE reused?
-- Were PATTERNS followed?
-- All PLAN steps done?
+## 2. 检查计划符合性
+- 是否复用了 EXISTING_CODE？
+- 是否遵循了 PATTERNS？
+- 所有 PLAN 步骤是否完成？
 
-## Auto-Detect Focus Areas
-Based on what was implemented, check relevant areas:
+## 自动检测关注领域
+根据实现的内容，检查相关领域：
 
-**If touched auth/passwords/tokens/API keys:**
-- Input validation and sanitization
-- No hardcoded secrets
-- Secure token handling
+**如果涉及 auth/passwords/tokens/API keys：**
+- 输入验证和清理
+- 无硬编码密钥
+- 安全的令牌处理
 
-**If touched database/SQL:**
-- Prepared statements (no SQL injection)
-- Proper error handling
+**如果涉及 database/SQL：**
+- 预处理语句（防止 SQL 注入）
+- 正确的错误处理
 
-**If touched user input/forms:**
-- Input validation
-- XSS prevention (escape output)
+**如果涉及用户输入/表单：**
+- 输入验证
+- XSS 防护（转义输出）
 
-**If touched API endpoints:**
-- Proper response format
-- Error responses
-- Authentication checks
+**如果涉及 API 端点：**
+- 正确的响应格式
+- 错误响应
+- 身份验证检查
 
-**If touched async/state:**
-- Race condition checks
-- Error state handling
+**如果涉及 async/state：**
+- 竞态条件检查
+- 错误状态处理
 
-**If touched UI:**
-- Matches design system (if specs/DESIGN_SYSTEM.md exists)
-- Accessibility basics
+**如果涉及 UI：**
+- 匹配设计系统（如果存在 specs/DESIGN_SYSTEM.md）
+- 可访问性基础
 
-## Run Checks
-Use TEST_COMMAND from .task file (or detect from CONTEXT.md)
+## 运行检查
+使用 .task 文件中的 TEST_COMMAND（或从 CONTEXT.md 检测）
 
-## Testing Approach
-Check what testing infrastructure exists in the project:
-- If tests exist → run them, ensure new code is covered
-- Testing expectations depend on context (see mode-specific guidance if present)
+## 测试方法
+检查项目中存在的测试基础设施：
+- 如果存在测试 → 运行它们，确保新代码有覆盖
+- 测试预期取决于上下文（参见特定模式指导）
 
-## Classify Issues by Type AND Severity
+## 按类型和严重程度分类问题
 
-### Issue Types:
-- 🔧 ENVIRONMENT: Missing tools, dependencies, wrong container setup, config needed
-- 💻 CODE: Bugs, logic errors, security issues, missing error handling
+### 问题类型：
+- 🔧 环境：缺少工具、依赖项、容器配置错误、需要配置
+- 💻 代码：bug、逻辑错误、安全问题、缺少错误处理
 
-### Severity:
-- 🔴 BLOCKER: Security vulnerabilities, data loss risk, crashes
-- 🟡 ISSUE: Bugs, logic errors, missing error handling
-- 🟢 SUGGESTION: Style improvements, minor optimizations
+### 严重程度：
+- 🔴 BLOCKERS：安全漏洞、数据丢失风险、崩溃
+- 🟡 问题：bug、逻辑错误、缺少错误处理
+- 🟢 建议：样式改进、小优化
 
-## CRITICAL: Environment Issues Are SOLVABLE, Not Blockers
-If you encounter an environment issue (missing tool, dependency, wrong setup):
-- This is NOT a blocker - it's a SOLVABLE ISSUE
-- Examples: "Chrome not installed", "missing npm package", "Docker needs config"
-- Mark as: 🔧 ENVIRONMENT ISSUE (not BLOCKER)
-- Include REMEDIATION: what needs to be installed/configured to fix it
+## 关键：环境问题是可解决的，不是BLOCKERS
+如果遇到环境问题（缺少工具、依赖、配置错误）：
+- 这不是BLOCKERS - 这是可解决的问题
+- 示例："未安装 Chrome"、"缺少 npm 包"、"Docker 需要配置"
+- 标记为：🔧 环境问题（不是BLOCKERS）
+- 包含 REMEDIATION：需要安装/配置什么来修复
 
-## CRITICAL: Pre-existing Issues MUST Be Flagged
-If you discover a broken build, failing tests, or other issues:
-- Flag them even if they existed BEFORE the current task
-- Do NOT dismiss issues as "pre-existing, not blocking"
-- A broken codebase is a broken codebase - it must be fixed
-- The FIX step will handle all flagged issues
-- If something fails (db:push, tests, build), flag it as an ISSUE
+## 关键：必须标记预先存在的问题
+如果发现构建失败、测试失败或其他问题：
+- 即使它们在当前任务**之前**就存在也要标记
+- 不要 Dismiss 问题为"预先存在的，不阻塞"
+- 损坏的代码库就是损坏的代码库 - 必须修复
+- 后续的**修复**阶段会处理所有标记的问题
+- 如果某些东西失败（db:push、测试、构建），标记为问题
 
-## Check Against Pending Tasks
-Before flagging unused code, check TASKS.md:
-- Will a pending task use it? → Not an issue, note "scaffolding for task X"
-- No pending task needs it? → Flag as ISSUE: remove dead code
+## 根据待处理任务检查
+在标记未使用代码之前，检查 TASKS.md：
+- 是否有待处理任务会用到它？→ 不是问题，注明"任务 X 的脚手架"
+- 没有待处理任务需要它？→ 标记为问题：移除无用代码
 
-Don't suppress warnings for scaffolding. Don't keep actual dead code.
+不要压制关于脚手架的警告。不要保留真正的无用代码。
 
-## Append to .task:
+## 追加到 .task：
 ```
 REVIEW_RESULT:
 OUTCOME_ACHIEVED: yes/no
-OUTCOME_EVIDENCE: [what you checked and found]
+OUTCOME_EVIDENCE: [你检查了什么以及发现了什么]
 BUILD_PASSED: yes/no
 TESTS_PASSED: yes/no
 
 ENVIRONMENT_ISSUES:
-- [type] [description] → REMEDIATION: [how to fix]
+- [类型] [描述] → REMEDIATION: [如何修复]
 
 BLOCKERS:
-- [if any - includes outcome not achieved]
+- [如果有 - 包括结果未达成的情况]
 
 ISSUES:
-- [if any]
+- [如果有]
 
 SUGGESTIONS:
-- [if any, brief]
+- [如果有，简要]
 ```
 
-If all good, write:
+如果一切正常，写入：
 ```
 REVIEW_RESULT:
 OUTCOME_ACHIEVED: yes
-OUTCOME_EVIDENCE: [brief proof]
+OUTCOME_EVIDENCE: [简要证明]
 BUILD_PASSED: yes
 TESTS_PASSED: yes
 ISSUES: none
@@ -476,109 +478,107 @@ ISSUES: none
 REVIEW_EOF
 
 read -r -d '' FIX_PROMPT << 'FIX_EOF' || true
-# FIX STEP
+# 修复阶段
 
-**IMPORTANT: This is step 4 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - fix issues found by REVIEW automatically
-- Do NOT ask questions or request approval - just fix the issues
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第4步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 自动修复评审发现的问题
+- 不要提问或请求批准 - 只修复问题
+- 直接、实事求是 - 不需要客套话
 
-Read REVIEW_RESULT in .task file. Fix issues by priority.
+阅读 .task 文件中的 REVIEW_RESULT。按优先级修复问题。
 
-## NOTHING TO FIX? STOP HERE.
-If REVIEW shows:
+## 没有需要修复的？在这里停止。
+如果 REVIEW 显示：
 - OUTCOME_ACHIEVED: yes
-- No ENVIRONMENT_ISSUES (empty or "none")
-- No BLOCKERS (empty or "none")
-- No ISSUES (empty or "none")
+- 没有 ENVIRONMENT_ISSUES（空或 "none"）
+- 没有 BLOCKERS（空或 "none"）
+- 没有 ISSUES（空或 "none"）
 
-Then there is NOTHING for you to do. Simply:
-1. Delete the .task file
-2. Ensure task is marked `- [x]` in TASKS.md
-3. STOP IMMEDIATELY - do NOT implement new code, do NOT start new tasks
+那么你没有任何事要做。只需：
+1. 删除 .task 文件
+2. 确保任务在 TASKS.md 中标记为 `- [x]`
+3. 立即停止 - 不要实现新代码，不要开始新任务
 
-The FIX step ONLY fixes problems found by REVIEW. It does NOT:
-- Implement new features
-- Start the next task
-- Add improvements not flagged by REVIEW
-- Do anything beyond fixing flagged issues
+修复阶段**只**修复评审发现的问题。它：
+- 不实现新功能
+- 不开始下一个任务
+- 不做超出修复标记问题以外的任何事情
 
-If there are no issues, your entire job is: delete .task, mark complete, done.
+如果没有问题，你的整个工作是：删除 .task，标记任务完成。
 
-## Priority Order (only if issues exist)
-1. ❌ OUTCOME_ACHIEVED: no - The task isn't done! Fix implementation first.
-2. 🔧 ENVIRONMENT_ISSUES - CREATE REMEDIATION TASKS
-3. 🔴 BLOCKERS - code issues that must be fixed
-4. 🟡 ISSUES - fix if straightforward
-5. 🟢 SUGGESTIONS - fix only if trivial
+## 优先级顺序（仅当存在问题时）
+1. ❌ OUTCOME_ACHIEVED: no - 任务未完成！先修复实现。
+2. 🔧 环境问题 - 创建修复任务
+3. 🔴 BLOCKERS - 必须修复的代码问题
+4. 🟡 问题 - 直接修复
+5. 🟢 建议 - 直接修复
 
-## If OUTCOME_ACHIEVED is "no"
-The implementation doesn't do what the task required. You must:
-1. Read EXPECTED_OUTCOME and OUTCOME_EVIDENCE from .task
-2. Figure out WHY the outcome wasn't achieved
-3. Fix the implementation until the outcome IS achieved
-4. Re-verify the outcome yourself before proceeding
-This is NOT optional - a task without its outcome is not done.
+## 如果 OUTCOME_ACHIEVED 是 "no"
+这说明没有完成任务要求。你必须：
+1. 从 .task 阅读 EXPECTED_OUTCOME 和 OUTCOME_EVIDENCE
+2. 找出结果未达成的原因
+3. 修复实现直到结果**确实**达成
+4. 在继续之前自己重新验证结果
 
-## Handling ENVIRONMENT_ISSUES (Critical!)
-Environment issues are SOLVABLE. You must:
-1. Read the REMEDIATION from .task file
-2. ADD A NEW TASK to TASKS.md to fix the environment issue
-   - Insert it BEFORE the current task (so it runs next iteration)
-   - Format: `- [ ] Setup: [remediation action]`
-   - Examples:
-     - `- [ ] Setup: Install Chromium and dependencies in Dockerfile.dev`
-     - `- [ ] Setup: Add missing npm package X to dependencies`
-     - `- [ ] Setup: Configure Docker to support tool Y`
-3. Unmark current task back to `- [ ]` (it will retry after environment is fixed)
-4. Delete .task file
-5. DO NOT mark as blocked - the environment task will fix it
+## 处理开发环境问题（关键！）
+环境问题是可解决的。你必须：
+1. 从 .task 文件阅读 REMEDIATION
+2. 向 TASKS.md 添加新任务以修复环境问题
+   - 将其插入当前任务**之前**（以便下次迭代运行）
+   - 格式：`- [ ] Setup: [修复操作]`
+   - 示例：
+     - `- [ ] Setup: 在 Dockerfile.dev 中安装 Chromium 及依赖项`
+     - `- [ ] Setup: 将缺少的 npm 包 X 添加到依赖项`
+     - `- [ ] Setup: 配置 Docker 以支持工具 Y`
+3. 将当前任务取消标记回 `- [ ]`（环境修复后它会重试）
+4. 删除 .task 文件
+5. 不要标记为阻塞 - 环境任务会修复它
 
-## Your Job for Code Issues
-1. Fix BLOCKERS (mandatory)
-2. Fix ISSUES (should fix)
-3. Consider SUGGESTIONS (nice to have)
-4. Re-run TEST_COMMAND to confirm
-5. Commit fixes: "fix: [description]"
+## 你对代码问题的工作
+1. 修复BLOCKERS（必须）
+2. 修复问题（应该修复）
+3. 考虑建议（最好有）
+4. 重新运行 TEST_COMMAND 确认
+5. 提交修复："fix: [描述]"
 
-**IMPORTANT: Fix ALL flagged issues, not just ones from the current task.**
-If REVIEW flagged a pre-existing issue (broken build, failing db:push, etc.),
-you MUST fix it. Don't skip issues because "another task caused it."
-A broken codebase blocks all future work - fix it now.
+**重要：修复所有标记的问题，不仅仅是当前任务的。**
+如果评审标记了预先存在的问题（构建失败、db:push 失败等），
+你**必须**修复它。不要跳过问题，因为"另一个任务导致的"。
+损坏的代码库会阻塞所有未来工作 - 现在修复它。
 
-## NEVER Cheat on Tests
-When a test fails, you MUST fix the IMPLEMENTATION, not the test.
+## 永远不要在测试上作弊
+当测试失败时，你必须修复实现，而不是测试。
 
-**Forbidden "fixes" that are actually cheating:**
-- Mocking a return value to make the test pass
-- Weakening assertions (changing `toBe(5)` to `toBeTruthy()`)
-- Removing test cases that fail
-- Adding `.skip` or commenting out failing tests
-- Stubbing the function being tested to return expected values
+**禁止的"修复"实际上是作弊：**
+- Mock 返回值使测试通过
+- 削弱断言（将 `toBe(5)` 改为 `toBeTruthy()`）
+- 删除失败的测试用例
+- 添加 `.skip` 或注释掉失败的测试
+- 将被测试的函数 stub 为返回预期值
 
-**The ONLY time you may change a test:**
-- The test itself has a bug (wrong expected value, typo)
-- Upstream changes made the test's assumptions invalid (API changed, schema changed)
-- AND you verify the test still tests meaningful behavior after your change
+**唯一可以更改测试的情况：**
+- 测试本身有 bug（错误的期望值、拼写错误）
+- 上游更改使测试的假设无效（API 更改、架构更改）
+- 并且你验证测试在更改后仍然测试有意义的行为
 
-If a test fails, the test is doing its job - it found a bug. Fix the bug.
-A test suite that always passes because you gutted it is worthless.
+如果测试失败，测试正在做它的工作 - 它发现了一个 bug。修复 bug。
+因为你自己删除了代码而总是通过的测试套件毫无价值。
 
-## After Fixing
-If all fixed + tests pass:
-- Delete .task file
-- Ensure task is marked `- [x]` in TASKS.md (with note if useful)
+## 修复后
+如果所有修复 + 测试通过：
+- 删除 .task 文件
+- 确保任务在 TASKS.md 中标记为 `- [x]`（如果有用则添加备注）
 
-If environment issue found:
-- Add remediation task to TASKS.md (see above)
-- Unmark current task
-- Delete .task file
-- CONTINUE (not blocked!)
+如果发现环境问题：
+- 向 TASKS.md 添加修复任务（见上文）
+- 取消标记当前任务
+- 删除 .task 文件
+- 继续（未阻塞！）
 
-If TRUE code blocker (rare - only security/data issues with no fix):
-- Unmark task in TASKS.md back to `- [ ]`
-- Add blocker note: `- [ ] Task description ⚠️ Blocked: [reason]`
-- Keep .task file for context
+如果真正的代码BLOCKERS（罕见 - 只有无法修复的安全/数据问题）：
+- 将 TASKS.md 中的任务取消标记回 `- [ ]`
+- 添加BLOCKERS备注：`- [ ] 任务描述 ⚠️ 被阻塞：[原因]`
+- 保留 .task 文件作为上下文
 FIX_EOF
 
 #==============================================================================
@@ -947,109 +947,114 @@ This is an EXISTING project. You MUST:
     fi
 
     read -r -d '' INIT_PROMPT << 'INIT_EOF' || true
-# PROJECT INITIALIZATION (Planning Only)
+# 项目初始化（仅规划）
 
-You have an idea file (freeform, any format) and detected environment info.
-Your job: Create PLANNING FILES only (CONTEXT.md, TASKS.md, specs/).
+你有一个想法文件（自由内容，任何格式）和你自己检测到的环境信息。
+你的工作：仅创建规划文件（CONTEXT.md, TASKS.md, specs/）。
 
-## CRITICAL: This is a PLANNING phase, NOT implementation
-- You create the roadmap, the PLAN→EXECUTE→REVIEW→FIX loop builds it
-- DO NOT write any source code, HTML, CSS, JavaScript, Python, etc.
-- DO NOT create the actual project files (index.html, app.py, main.js, etc.)
-- ONLY create: CONTEXT.md, TASKS.md, and specs/*.md files
-- The tasks you create will be implemented one-by-one in the dev loop
+## 关键：这是规划阶段，不是实现
+- 你创建路线图，使用规划→执行→评审→修复的循环构方式建它
+- 不要编写任何源代码、HTML、CSS、JavaScript、Python 等
+- 不要创建实际的项目文件（index.html、app.py、main.js 等）
+- 仅创建：CONTEXT.md、TASKS.md 和 specs/*.md 文件
+- 你创建的任务将在开发循环(规划→执行→评审→修复)中逐个实现
 
-## Core Principle: RESPECT THE IDEA
-- User's idea is the source of truth - don't change their concept
-- If they specified something, use it exactly
-- If they didn't specify, infer sensibly from context
-- Fill gaps to make it buildable, but preserve their intent
-- A detailed spec needs less inference; a vague idea needs more
+## 核心原则：尊重想法
+- 用户的想法是真理来源 - 不要改变他们的概念
+- 如果他们指定了什么，就准确使用
+- 如果他们没有指定，从上下文合理推断
+- 填补空白使其可构建，但保留他们的意图
 
-## Phase 1: Understand
-1. Read the idea file - extract what the user actually wants
-2. Identify what's SPECIFIED (use as-is) vs what's UNSPECIFIED (infer)
-3. Check detected environment for existing tech stack
-4. If CLAUDE.md exists, read for existing project rules
-5. **IF EXISTING PROJECT**: Explore the codebase! Read source files to understand:
-   - What's already built
-   - Code patterns and architecture used
-   - What the idea is asking to ADD or CHANGE vs what exists
+## 阶段 1：理解
+1. 阅读想法文件 - 提取用户真正想要什么
+2. 识别什么是已指定的（按原样使用）vs 什么是未指定的（推断）
+3. 检查检测到的环境以了解现有技术栈
+4. 如果存在 CLAUDE.md，阅读以了解现有项目规则
+5. **如果存在现有项目**：探索代码库！阅读源文件以了解：
+   - 已经构建了什么
+   - 使用的代码模式和架构
+   - 想法要求添加或更改什么 vs 已存在的内容
 
-## Phase 2: Infer Missing Pieces (only if not specified)
-For anything the user didn't specify, make smart choices:
-- Tech stack: Use detected, or pick appropriate for project type
-- Architecture: Simple and appropriate for scope (or follow existing patterns)
-- Scope: Take idea at face value - don't expand or reduce
+## 阶段 2：推断缺失部分（仅当未指定时）
+对于用户未指定的任何内容，做出明智的选择：
+- 技术栈：使用检测到的，或为项目类型选择合适的
+- 架构：使用简单且适合的, 或者业内最常用的（或遵循现有模式）
+- 范围：尽可能尊重用户提出的想法, 用行业惯例推断实现用户想法需要的东西
 
-## Testing Principle: IF YOU CAN'T TEST IT, BUILD A WAY TO TEST IT
-Unless user explicitly says "no tests", you MUST include testing:
-- Add test framework setup task early (jest, pytest, vitest, etc.)
-- Include test tasks for each major feature
-- Tests enable the REVIEW step to verify work automatically
-- Without tests, the feedback loop is blind
-- Even simple projects benefit from basic smoke tests
+## 测试原则：如果你无法测试它，就构建一种测试方法
+除非用户明确说"不需要测试"，否则你必须包含测试：
+- 在早期就添加测试框架设置任务（jest、pytest、vitest 等）
+- 为每个主要功能包含测试任务
+- 测试使评审阶段能够自动验证工作
+- 没有测试，反馈循环是盲目的
+- 即使是简单项目也能从基本测试中受益
 
-## Phase 3: Create Files
+## 阶段 3：创建文件
 
-### 1. CONTEXT.md (static reference for development)
+### 1. CONTEXT.md（开发的静态参考）
 ```markdown
-# [Project Name from idea]
+# [来自想法的项目名称]
 
-## What We're Building
-[User's vision - preserve their words/intent]
+## 我们在构建什么
+[用户的愿景 - 保留他们的话/意图]
 
-## Existing Codebase (if applicable)
-[Summary of what already exists - key files, patterns, architecture]
+## 现有代码库（如果适用）
+[已存在内容的摘要 - 关键文件、模式、架构]
 
-## Tech Stack
-[Detected or inferred]
+## 技术栈
+[检测到的或推断的]
 
-## Commands
-- Build: [detected or standard]
-- Test: [detected or standard]
-- Run: [detected or standard]
+## 架构设计
+模块划分清晰
+高内聚：模块只做一类事
+低耦合：模块间依赖最小
+边界明确：职责、数据、接口清楚
 
-## Key Decisions
-[Only if user specified preferences, constraints, or requirements]
+## 命令
+- 构建：[检测到的或标准的]
+- 测试：[检测到的或标准的]
+- 运行：[检测到的或标准的]
 
-## References
-- specs/ for detailed specifications
+## 关键决策
+[仅当用户指定了偏好、约束或要求时]
+
+## 参考
+- specs/ 用于详细规范
 ```
 
 ### 2. TASKS.md
-Break the idea into atomic tasks WITH VERIFIABLE OUTCOMES:
-- Setup tasks first (if node_modules/vendor/.env missing)
-- **For existing projects**: Tasks should reference existing code to modify/extend
-- Then features from the idea (in logical order)
-- Each task completable in one iteration
-- **Format: `- [ ] Action → Outcome`**
-  - Action: What to implement
-  - Outcome: How to verify it worked (must be machine-checkable)
-- Examples:
-  - `- [ ] Add login button to navbar → Button with href="/login" exists in header`
-  - `- [ ] Create /api/users endpoint → GET /api/users returns 200 with JSON array`
-  - `- [ ] Add email validation → Invalid email shows error message`
-- Number of tasks should match project scope (don't pad)
+将想法分解为具有可验证结果的独立最小任务：
+- 首先是开发环境设置任务（如果 node_modules/vendor/.env 缺失）
+- **对于现有项目**：任务应该引用现有代码以修改/扩展
+- 然后是想法中的功能（按逻辑顺序）
+- 保持高内聚低耦合模块化的设计思想
+- 每个任务可在一个迭代中完成
+- **格式：`- [ ] Action → Outcome`**
+  - Action：要实现什么
+  - Outcome：如何验证它有效（必须可机器检查,无需人工干预）
+- 示例：
+  - `- [ ] 向导航栏添加登录按钮 → 标题中存在带 href="/login" 的按钮`
+  - `- [ ] 创建 /api/users 端点 → GET /api/users 返回 200 和 JSON 数组`
+  - `- [ ] 添加电子邮件验证 → 无效电子邮件显示错误消息`
+- 任务数量应匹配项目范围（不要填充）
 
-### 3. specs/ folder (only if needed)
-Create specs that ADD VALUE - don't create empty scaffolds:
-- API project with endpoints → specs/API.md with routes, payloads
-- UI with specific design → specs/DESIGN_SYSTEM.md
-- Complex data model → specs/DATA_MODEL.md
-- Skip specs that would just repeat the idea
+### 3. specs/ 文件夹（仅在需要时）
+创建增加价值的specs- 不要创建空脚手架, 例如：
+- 带端点的 API 项目 → specs/API.md 包含路由、负载
+- 具有特定设计的 UI → specs/DESIGN_SYSTEM.md
+- 复杂数据模型 → specs/DATA_MODEL.md
+- 跳过只会重复想法的specs
 
-## What NOT to Do
-- **DO NOT write implementation code** - no source files, no index.html, no app.py, etc.
-- Don't add features the user didn't ask for
-- Don't create specs that just restate obvious things
-- Don't expand scope beyond what they described
-- Don't change their architectural choices if specified
-- Don't add "nice to have" tasks - stick to the idea
-- Don't create tasks for "start server" or other manual user actions
-- **For existing projects**: Don't recreate what already exists!
+## 不做什么
+- **不要编写任何实现代码** - 源文件、 index.html、app.py 等
+- 不要添加用户未要求的功能
+- 不要创建只是重述明显事情的规范
+- 不要扩展超出他们描述的范围
+- 如果指定了，不要改变他们的架构选择
+- 不要添加"最好有"的任务 - 尊重用户的想法
+- 不要为"启动服务器"或其他需要用户手动操作的事创建任务
+- **对于现有项目**：不要重新创建已存在的内容！
 
-Read the idea, understand the vision, create the planning files. Implementation happens later.
 INIT_EOF
 
     IDEA_CONTENT=$(cat "$IDEA_FILE")
@@ -1170,51 +1175,51 @@ if [[ "$1" == "refresh" ]]; then
     echo -e "${CYAN}Bjarne refreshing project from: $NOTES_FILE${NC}"
 
     read -r -d '' REFRESH_PROMPT << 'REFRESH_EOF' || true
-# PROJECT REFRESH
+# 项目刷新
 
-You have freeform notes from the user after testing/reviewing the project.
-Your job: Update CONTEXT.md if needed and ADD new tasks to TASKS.md.
+你在测试/评审项目后收到了用户的自由格式笔记。
+你的工作：需要时更新 CONTEXT.md 并向 TASKS.md 添加新任务。
 
-## The Notes May Contain
-- Bug reports from manual testing
-- New feature requests
-- Tweaks and adjustments needed
-- Things that didn't work as expected
-- New ideas to add
+## 笔记可能包含
+- 手动测试中的 bug 报告
+- 新功能请求
+- 需要的调整
+- 不符合预期的事情
+- 要添加的新想法
 
-## Your Job
-1. Read the notes file carefully
-2. Read current CONTEXT.md to understand the project
-3. Read current TASKS.md to see what's done and what's pending
-4. Explore relevant code if needed to understand the issues
+## 你的工作
+1. 仔细阅读笔记文件
+2. 阅读当前的 CONTEXT.md 以了解项目
+3. 阅读当前的 TASKS.md 查看已完成和待处理的内容
+4. 如需要，探索相关代码以了解问题
 
-## What to Update
+## 要更新什么
 
-### CONTEXT.md (only if needed)
-- Add new architectural decisions if the notes change direction
-- Update "What We're Building" only if scope genuinely changed
-- Usually you WON'T need to change CONTEXT.md
+### CONTEXT.md（仅在需要时）
+- 如果笔记改变了方向，添加新的架构决策
+- 仅在范围真正改变时更新"我们在构建什么"
+- 通常你不需要更改 CONTEXT.md
 
-### TASKS.md (main update)
-- KEEP all existing tasks (completed and pending)
-- ADD new tasks at the bottom based on the notes
-- Group related new tasks together
-- Each task should be atomic (one iteration)
-- **Format: `- [ ] Action → Outcome`** (outcome must be machine-verifiable)
+### TASKS.md（主要更新）
+- 保留所有现有任务（已完成和待处理）
+- 根据笔记在底部添加新任务
+- 将相关的新任务分组
+- 每个任务应该是原子的（一个迭代）
+- **格式：`- [ ] 动作 → 结果`**（结果必须可机器验证）
 
-## Task Naming (always include → Outcome)
-- Bug fix: `- [ ] Fix: [bug] → [expected behavior after fix]`
-- New feature: `- [ ] Add: [feature] → [how to verify it works]`
-- Tweak/adjust: `- [ ] Adjust: [change] → [what should be different]`
-- Refactor: `- [ ] Refactor: [target] → [verification that behavior unchanged]`
+## 任务命名（始终包含 → 结果）
+- Bug 修复：`- [ ] 修复: [bug] → [修复后的预期行为]`
+- 新功能：`- [ ] 添加: [功能] → [如何验证它有效]`
+- 调整：`- [ ] 调整: [更改] → [应该有什么不同]`
+- 重构：`- [ ] 重构: [目标] → [验证行为未改变]`
 
-## What NOT to Do
-- Don't remove or reorder existing tasks
-- Don't mark tasks complete (that's for the dev loop)
-- Don't expand beyond what's in the notes
-- Don't duplicate existing tasks
+## 不做什么
+- 不要删除或重新排序现有任务
+- 不要标记任务完成（那是开发循环的工作）
+- 不要扩展超出笔记中的内容
+- 不要重复现有任务
 
-Read the notes, understand what's needed, update the project.
+阅读笔记，理解需要什么，更新项目。
 REFRESH_EOF
 
     NOTES_CONTENT=$(cat "$NOTES_FILE")
@@ -1496,33 +1501,33 @@ If the task description includes specific git instructions (branch name, workflo
     fi
 
     read -r -d '' DECOMPOSE_PROMPT_BASE << 'DECOMPOSE_EOF' || true
-# DECOMPOSE TASK
+# 分解任务
 
-**IMPORTANT: This is the first step of an automated pipeline.**
-- There is NO human in the loop - your output feeds into the task execution loop
-- Do NOT ask questions or request clarification - work with what you have
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第一步。**
+- 这里没有人工介入 - 你的输出进入任务执行循环
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
 
-You are breaking down a task for an autonomous coding agent.
+你正在为自主编码代理分解任务。
 
-CRITICAL: You are working on an EXISTING project. Do NOT delete any source files,
-configuration files, or project files. Only modify files directly related to this task.
-The project's existing files are NOT bjarne artifacts - do NOT remove them.
+关键：你正在处理现有项目。不要删除任何源文件、
+配置文件或项目文件。仅修改与该任务直接相关的文件。
+项目的现有文件不是 bjarne 产物 - 不要删除它们。
 
-## Instructions
-1. Explore the codebase to understand the relevant code
-2. Break this into discrete subtasks (or keep as one if simple enough)
-3. Each subtask must have: Action → Outcome (verifiable)
-4. Output ONLY a markdown checklist to SUBTASKS.md file
+## 说明
+1. 探索代码库以了解相关代码
+2. 将其分解为离散的子任务（如果足够简单则保持为一个）
+3. 每个子任务必须具有：Action → Outcome（可验证）
+4. 仅向 SUBTASKS.md 文件输出 markdown 检查清单
 
-## Subtask Format
-Each line must be: `- [ ] Action → Outcome`
-- Action: What to implement (specific, atomic)
-- Outcome: How to verify it worked (must be machine-checkable)
+## 子任务格式
+每行必须是：`- [ ] Action → Outcome`
+- Action：要实现什么（具体、原子）
+- Outcome：如何验证它有效（必须可机器检查）
 
-## Output
-Write ONLY the subtask checklist to the SUBTASKS.md file. Nothing else.
-Keep subtasks focused, atomic, and verifiable.
+## 输出
+仅将子任务检查清单写入 SUBTASKS.md 文件。没有其他内容。
+保持子任务聚焦、原子和可验证。
 DECOMPOSE_EOF
 
     DECOMPOSE_FULL_PROMPT="# TASK TO DECOMPOSE:
@@ -1708,80 +1713,80 @@ $FIX_PROMPT" "TASK_FIX"; then
     # Build finalize prompt - different based on worktree mode
     if [[ -n "$WORKTREE_PATH" ]]; then
         read -r -d '' FINALIZE_PROMPT << FINALIZE_EOF || true
-# FINALIZE TASK
+# 完成任务
 
-**IMPORTANT: This is the final step of an automated pipeline.**
-- There is NO human in the loop - just complete the finalization
-- Do NOT ask questions or request approval - just do the steps
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的最后一步。**
+- 这里没有人工介入 - 只需完成收尾工作
+- 不要提问或请求批准 - 只执行步骤
+- 直接、实事求是 - 不需要客套话
 
-**GIT WORKTREE MODE:** You are in an isolated worktree on branch: $WORKTREE_BRANCH
-- Do NOT switch branches - bjarne handles cleanup
-- Just commit, push, and create PR
+**GIT WORKTREE 模式**：你在分支 $WORKTREE_BRANCH 的隔离 worktree 中
+- 不要切换分支 - bjarne 处理清理
+- 只需提交、推送和创建 PR
 
-The task loop has completed. Now finalize the work:
+任务循环已完成。现在完成工作：
 
-## Your Actions
+## 你的操作
 
-1. **Check git status**
-   - Are there uncommitted changes? If so, commit them.
-   - Are there commits to push?
+1. **检查 git 状态**
+   - 是否有未提交的更改？如果是，提交它们。
+   - 是否有要推送的提交？
 
-2. **Push the branch**
-   - Push: \`git push -u origin $WORKTREE_BRANCH\`
-   - If push fails (no remote, auth issues), just note it and continue
+2. **推送分支**
+   - 推送：\`git push -u origin $WORKTREE_BRANCH\`
+   - 如果推送失败（没有远程、身份验证问题），只需记录并继续
 
-3. **Create PR if appropriate**
-   - Only if: pushed successfully and \`gh\` CLI is available
-   - Check if PR already exists: \`gh pr list --head $WORKTREE_BRANCH\`
-   - If no PR exists, create one with a good title and description
-   - Include what was changed and how to test it
+3. **适当时创建 PR**
+   - 仅当：推送成功且 \`gh\` CLI 可用时
+   - 检查 PR 是否已存在：\`gh pr list --head $WORKTREE_BRANCH\`
+   - 如果不存在 PR，则创建一个带有良好标题和描述的 PR
+   - 包含更改了什么以及如何测试
 
-4. **Output summary**
-   - List what was accomplished
-   - Note any issues or incomplete items
-   - Include PR URL if created
+4. **输出摘要**
+   - 列出完成的内容
+   - 注意任何问题或未完成的项目
+   - 如果创建了 PR，包含 PR URL
 
-## Constraints
-- Do NOT run git checkout or git switch - stay on $WORKTREE_BRANCH
+## 约束
+- 不要运行 git checkout 或 git switch - 保持在 $WORKTREE_BRANCH 上
 FINALIZE_EOF
     else
         read -r -d '' FINALIZE_PROMPT << 'FINALIZE_EOF' || true
-# FINALIZE TASK
+# 完成任务
 
-**IMPORTANT: This is the final step of an automated pipeline.**
-- There is NO human in the loop - just complete the finalization
-- Do NOT ask questions or request approval - just do the steps
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的最后一步。**
+- 这里没有人工介入 - 只需完成收尾工作
+- 不要提问或请求批准 - 只执行步骤
+- 直接、实事求是 - 不需要客套话
 
-The task loop has completed. Now finalize the work:
+任务循环已完成。现在完成工作：
 
-## Your Actions
+## 你的操作
 
-1. **Check git status**
-   - What branch are you on?
-   - Are there uncommitted changes? If so, commit them.
-   - Are there commits to push?
+1. **检查 git 状态**
+   - 你在哪个分支上？
+   - 是否有未提交的更改？如果是，提交它们。
+   - 是否有要推送的提交？
 
-2. **Push if on a feature branch**
-   - If you created a feature branch and have commits, push it: `git push -u origin <branch>`
-   - If push fails (no remote, auth issues), just note it and continue
+2. **如果在功能分支上则推送**
+   - 如果你创建了功能分支并且有提交，推送它：`git push -u origin <branch>`
+   - 如果推送失败（没有远程、身份验证问题），只需记录并继续
 
-3. **Create PR if appropriate**
-   - Only if: on a feature branch, pushed successfully, `gh` CLI is available
-   - Check if PR already exists: `gh pr list --head <branch>`
-   - If no PR exists, create one with a good title and description
-   - Include what was changed and how to test it
+3. **适当时创建 PR**
+   - 仅当：在功能分支上、推送成功、`gh` CLI 可用时
+   - 检查 PR 是否已存在：`gh pr list --head <branch>`
+   - 如果不存在 PR，则创建一个带有良好标题和描述的 PR
+   - 包含更改了什么以及如何测试
 
-4. **Return to original branch**
-   - Switch back to the starting branch
+4. **返回原始分支**
+   - 切换回起始分支
 
-5. **Output summary**
-   - List what was accomplished
-   - Note any issues or incomplete items
-   - Include PR URL if created
+5. **输出摘要**
+   - 列出完成的内容
+   - 注意任何问题或未完成的项目
+   - 如果创建了 PR，包含 PR URL
 
-## Constraints
+## 约束
 FINALIZE_EOF
     fi
 
@@ -1916,226 +1921,226 @@ MAIN_MODE_HEADER="## DEVELOPMENT MODE - Testing Requirements
 get_batch_plan_prompt() {
     local batch_size="$1"
     cat << BATCH_PLAN_EOF
-# PLAN STEP (Batch Mode)
+# 规划阶段（批处理模式）
 
-**IMPORTANT: This is step 1 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - your output feeds into the next step
-- Do NOT ask questions or request clarification - work with what you have
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第1步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出进入下一步
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
 
-You are planning UP TO $batch_size RELATED tasks from TASKS.md.
+你正在从 TASKS.md 规划最多 $batch_size 个相关任务。
 
-## Your Job
-1. Read CONTEXT.md for project info and commands
-2. Read TASKS.md - scan ALL unchecked \`- [ ]\` tasks
-3. **Identify naturally related tasks** - look for:
-   - Tasks that touch the same file(s)
-   - Tasks that are part of the same feature/component
-   - Tasks that have logical dependencies (do A before B)
-   - Tasks that share the same patterns/utilities
-4. **Select UP TO $batch_size tasks** that make sense to do together
-   - Could be 1 task if it's standalone
-   - Could be 2-5 if they're tightly related
-   - Don't force grouping - only batch what naturally belongs together
-5. Read specs/ folder for detailed specifications
-6. Search the codebase for existing patterns, utilities, components
-7. Write a plan to .task file
+## 你的任务
+1. 阅读 CONTEXT.md 获取项目信息和命令
+2. 阅读 TASKS.md - 扫描所有未选中的 \`- [ ]\` 任务
+3. **识别自然相关的任务** - 寻找：
+   - 涉及相同文件的任务
+   - 属于同一功能/组件的任务
+   - 具有逻辑依赖关系的任务（先 A 后 B）
+   - 共享相同模式/工具的任务
+4. **选择最多 $batch_size 个任务**，它们在一起做有意义
+   - 如果是独立的，可能是 1 个任务
+   - 如果紧密相关，可能是 2-5 个
+   - 不要强制分组 - 只批处理自然属于一起的任务
+5. 阅读 specs/ 文件夹中的详细规范
+6. 搜索代码库中的现有模式、工具、组件
+7. 将计划写入 .task 文件
 
-## STOP: Verify Tasks Are Actually Unchecked
-Before planning, CONFIRM each task line starts with \`- [ ]\` (space between brackets).
-Skip any task marked \`- [x]\` (already complete).
+## 停止：验证任务是否确实未选中
+规划之前，确认每个任务行以 \`- [ ]\` 开头（括号之间有空格）。
+跳过标记为 \`- [x]\` 的任务（已完成）。
 
-## Write to .task file:
+## 写入 .task 文件：
 \`\`\`
 TASKS:
-- [exact task 1 text from TASKS.md]
-- [exact task 2 text, if batching]
-- [etc.]
+- [TASKS.md 中的确切任务 1 文本]
+- [如果批处理，确切任务 2 文本]
+- [等等]
 
 EXPECTED_OUTCOMES:
-- Task 1: [how to verify success - from the → part]
-- Task 2: [verification for task 2]
+- 任务 1: [如何验证成功 - 来自 → 部分]
+- 任务 2: [任务 2 的验证]
 
 EXISTING_CODE:
-- [file/function to reuse]
+- [可复用的文件/函数]
 
 PATTERNS:
-- [pattern from codebase to follow]
+- [代码库中要遵循的模式]
 
 PLAN:
-1. [specific step - note which task(s) it addresses]
-2. [specific step]
+1. [具体步骤 - 注明涉及哪些任务]
+2. [具体步骤]
 
-FILES_TO_CREATE: [list]
-FILES_TO_MODIFY: [list]
-TEST_COMMAND: [from CONTEXT.md or detected]
+FILES_TO_CREATE: [列表]
+FILES_TO_MODIFY: [列表]
+TEST_COMMAND: [来自 CONTEXT.md 或检测到的命令]
 
 OUTCOME_VERIFICATION:
-- Task 1: [specific check, e.g., "grep for button with href=/login"]
-- Task 2: [verification for task 2]
+- 任务 1: [具体检查，例如 "grep 查找带 href=/login 的按钮"]
+- 任务 2: [任务 2 的验证]
 \`\`\`
 
-## Grouping Guidelines
-- **DO batch**: All CRUD operations for one model, all UI components for one page, related API endpoints
-- **DON'T batch**: Unrelated features, tasks in different areas of codebase, tasks with no shared context
-- **When in doubt**: Smaller batches are fine. Quality over quantity.
+## 分组指南
+- **批处理**：一个模型的所有 CRUD 操作、一个页面的所有 UI 组件、相关的 API 端点
+- **不批处理**：无关的功能、代码库不同区域的任务、没有共享上下文的任务
+- **不确定时**：较小的批次也可以。质量胜于数量。
 
-## Architecture Principles
-- REUSE existing code - search first
-- EXTEND existing files when logical
-- ONE clear responsibility per file
-- Follow existing patterns in codebase
-- Match existing code style
+## 架构原则
+- 复用现有代码 - 先搜索
+- 合理时扩展现有文件
+- 每个文件单一明确职责
+- 遵循代码库中的现有模式
+- 匹配现有代码风格
 
-DO NOT implement. Just plan.
+不要实现。只做规划。
 BATCH_PLAN_EOF
 }
 
 get_batch_execute_prompt() {
     cat << 'BATCH_EXEC_EOF'
-# EXECUTE STEP (Batch Mode)
+# 执行阶段（批处理模式）
 
-**IMPORTANT: This is step 2 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - just implement the plan
-- Do NOT ask questions or request approval - execute the plan
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第2步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 只需实现计划
+- 不要提问或请求批准 - 执行计划
+- 直接、实事求是 - 不需要客套话
 
-Read .task file. Follow the plan exactly - implement ALL listed tasks.
+阅读 .task 文件。严格按照计划执行 - 实现所有列出的任务。
 
-**Your primary job is IMPLEMENTATION - use Write and Edit tools to create/modify files.**
-The PLAN phase already researched the codebase. Trust the plan's EXISTING_CODE and PATTERNS.
-You may read files when needed for implementation, but prioritize writing code over exploration.
+**你的主要工作是实现 - 使用 Write 和 Edit 工具创建/修改文件。**
+规划阶段已经研究过代码库。信任计划中的 EXISTING_CODE 和 PATTERNS。
+实现时可以阅读文件，但要优先写代码而不是探索。
 
-## Rules
-- Follow the PLAN steps in order
-- Implement ALL tasks listed in the TASKS section
-- REUSE code listed in EXISTING_CODE
-- Follow PATTERNS for consistency
-- Match existing code style in the project
-- Clear names, no abbreviations
-- Handle errors meaningfully
+## 规则
+- 按顺序执行 PLAN 步骤
+- 实现 TASKS 部分中列出的所有任务
+- 复用 EXISTING_CODE 中列出的代码
+- 遵循 PATTERNS 保持一致性
+- 匹配项目中的现有代码风格
+- 命名清晰，不要缩写
+- 妥善处理错误
 
-## Code Quality (adapt to project's tech stack)
-- Keep functions focused (single responsibility)
-- Keep files cohesive (related code together)
-- Comments explain WHY not WHAT
+## 代码质量（适应项目的技术栈）
+- 保持函数聚焦（单一职责）
+- 保持文件内聚（相关代码放在一起）
+- 注释解释为什么而不是什么
 
-## When Done
-Mark ALL completed tasks in TASKS.md with a short note if you learned something useful:
-- Simple completion: `- [x] Task description`
-- With note: `- [x] Task description → Note: [one-line insight]`
+## 完成时
+在 TASKS.md 中标记所有完成的任务，如果学到了有用的东西可以加简短备注：
+- 简单完成：`- [x] 任务描述`
+- 带备注：`- [x] 任务描述 → 备注：[一行见解]`
 
-Only add a note if it would help future tasks (e.g., "used X instead of Y", "requires Z first").
+只有在有助于未来任务时才添加备注（例如"用了 X 而不是 Y"、"需要先完成 Z"）。
 
-Then commit: "feat: [brief summary of all tasks]"
+然后提交："feat: [所有任务的简要摘要]"
 BATCH_EXEC_EOF
 }
 
 get_batch_review_prompt() {
     cat << 'BATCH_REVIEW_EOF'
-# REVIEW STEP (Batch Mode)
+# 评审阶段（批处理模式）
 
-**IMPORTANT: This is step 3 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - your output feeds directly into the FIX step
-- Do NOT ask questions like "Would you like me to fix this?"
-- Do NOT offer to make changes - just document findings
-- The FIX step will automatically process everything you report
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第3步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入修复阶段
+- 不要问"你想让我修复这个吗？"这类问题
+- 不要主动提出修改 - 只需记录发现
+- 修复阶段会自动处理你报告的所有内容
+- 直接、实事求是 - 不需要客套话
 
-Review implementation against .task plan - verify ALL batched tasks.
+根据 .task 计划评审实现结果 - 验证所有批处理的任务。
 
-## 1. VERIFY ALL OUTCOMES (Most Important!)
-Read EXPECTED_OUTCOMES and OUTCOME_VERIFICATION from .task file.
-For EACH task listed, actually run the verification steps:
-- If it says "button exists with href=/login" → grep/search for it
-- If it says "API returns 200" → curl the endpoint
-- If it says "error message shows" → check the component renders it
-- If it says "file created at X" → verify file exists
+## 1. 验证所有结果（最重要！）
+从 .task 文件中阅读 EXPECTED_OUTCOMES 和 OUTCOME_VERIFICATION。
+对于每个列出的任务，实际运行验证步骤：
+- 如果说"按钮存在且 href=/login" → grep/搜索它
+- 如果说"API 返回 200" → curl 端点
+- 如果说"显示错误消息" → 检查组件是否渲染它
+- 如果说"文件创建于 X" → 验证文件存在
 
-**Track each task's outcome separately:**
-- Task 1: ✅ achieved / ❌ not achieved
-- Task 2: ✅ achieved / ❌ not achieved
-- etc.
+**分别跟踪每个任务的结果：**
+- 任务 1: ✅ 达成 / ❌ 未达成
+- 任务 2: ✅ 达成 / ❌ 未达成
+- 等等
 
-**If ANY outcome NOT achieved**: This is a 🔴 BLOCKER - that task isn't done.
+**如果任何结果未达成**：这是 🔴 BLOCKERS - 该任务未完成。
 
-## 2. Check Plan Compliance
-- Were ALL tasks in the batch addressed?
-- Was EXISTING_CODE reused?
-- Were PATTERNS followed?
-- All PLAN steps done?
+## 2. 检查计划符合性
+- 批处理中的所有任务是否都已处理？
+- 是否复用了 EXISTING_CODE？
+- 是否遵循了 PATTERNS？
+- 所有 PLAN 步骤是否完成？
 
-## Auto-Detect Focus Areas
-Based on what was implemented, check relevant areas:
+## 自动检测关注领域
+根据实现的内容，检查相关领域：
 
-**If touched auth/passwords/tokens/API keys:**
-- Input validation and sanitization
-- No hardcoded secrets
-- Secure token handling
+**如果涉及 auth/passwords/tokens/API keys：**
+- 输入验证和清理
+- 无硬编码密钥
+- 安全的令牌处理
 
-**If touched database/SQL:**
-- Prepared statements (no SQL injection)
-- Proper error handling
+**如果涉及 database/SQL：**
+- 预处理语句（防止 SQL 注入）
+- 正确的错误处理
 
-**If touched user input/forms:**
-- Input validation
-- XSS prevention (escape output)
+**如果涉及用户输入/表单：**
+- 输入验证
+- XSS 防护（转义输出）
 
-**If touched API endpoints:**
-- Proper response format
-- Error responses
-- Authentication checks
+**如果涉及 API 端点：**
+- 正确的响应格式
+- 错误响应
+- 身份验证检查
 
-**If touched async/state:**
-- Race condition checks
-- Error state handling
+**如果涉及 async/state：**
+- 竞态条件检查
+- 错误状态处理
 
-**If touched UI:**
-- Matches design system (if specs/DESIGN_SYSTEM.md exists)
-- Accessibility basics
+**如果涉及 UI：**
+- 匹配设计系统（如果存在 specs/DESIGN_SYSTEM.md）
+- 可访问性基础
 
-## Run Checks
-Use TEST_COMMAND from .task file (or detect from CONTEXT.md)
+## 运行检查
+使用 .task 文件中的 TEST_COMMAND（或从 CONTEXT.md 检测）
 
-## Classify Issues by Type AND Severity
+## 按类型和严重程度分类问题
 
-### Issue Types:
-- 🔧 ENVIRONMENT: Missing tools, dependencies, wrong container setup, config needed
-- 💻 CODE: Bugs, logic errors, security issues, missing error handling
+### 问题类型：
+- 🔧 环境：缺少工具、依赖项、容器配置错误、需要配置
+- 💻 代码：bug、逻辑错误、安全问题、缺少错误处理
 
-### Severity:
-- 🔴 BLOCKER: Security vulnerabilities, data loss risk, crashes, outcome not achieved
-- 🟡 ISSUE: Bugs, logic errors, missing error handling
-- 🟢 SUGGESTION: Style improvements, minor optimizations
+### 严重程度：
+- 🔴 BLOCKERS：安全漏洞、数据丢失风险、崩溃、结果未达成
+- 🟡 问题：bug、逻辑错误、缺少错误处理
+- 🟢 建议：样式改进、小优化
 
-## Append to .task:
+## 追加到 .task：
 ```
 REVIEW_RESULT:
 OUTCOMES_ACHIEVED:
-- Task 1: yes/no - [evidence]
-- Task 2: yes/no - [evidence]
+- 任务 1: yes/no - [证据]
+- 任务 2: yes/no - [证据]
 BUILD_PASSED: yes/no
 TESTS_PASSED: yes/no
 
 ENVIRONMENT_ISSUES:
-- [type] [description] → REMEDIATION: [how to fix]
+- [类型] [描述] → REMEDIATION: [如何修复]
 
 BLOCKERS:
-- [if any - includes outcomes not achieved]
+- [如果有 - 包括结果未达成的情况]
 
 ISSUES:
-- [if any]
+- [如果有]
 
 SUGGESTIONS:
-- [if any, brief]
+- [如果有，简要]
 ```
 
-If all good, write:
+如果一切正常，写入：
 ```
 REVIEW_RESULT:
 OUTCOMES_ACHIEVED:
-- Task 1: yes - [brief proof]
-- Task 2: yes - [brief proof]
+- 任务 1: yes - [简要证明]
+- 任务 2: yes - [简要证明]
 BUILD_PASSED: yes
 TESTS_PASSED: yes
 ISSUES: none
@@ -2145,97 +2150,97 @@ BATCH_REVIEW_EOF
 
 get_batch_fix_prompt() {
     cat << 'BATCH_FIX_EOF'
-# FIX STEP (Batch Mode)
+# 修复阶段（批处理模式）
 
-**IMPORTANT: This is step 4 of 4 in an automated pipeline (PLAN → EXECUTE → REVIEW → FIX).**
-- There is NO human in the loop - fix issues found by REVIEW automatically
-- Do NOT ask questions or request approval - just fix the issues
-- Be direct and factual - no conversational language needed
+**重要提示：这是自动化流程的第4步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 自动修复评审发现的问题
+- 不要提问或请求批准 - 只修复问题
+- 直接、实事求是 - 不需要客套话
 
-Read REVIEW_RESULT in .task file. Fix issues by priority.
+阅读 .task 文件中的 REVIEW_RESULT。按优先级修复问题。
 
-## NOTHING TO FIX? STOP HERE.
-If REVIEW shows:
-- ALL OUTCOMES_ACHIEVED: yes
-- No ENVIRONMENT_ISSUES (empty or "none")
-- No BLOCKERS (empty or "none")
-- No ISSUES (empty or "none")
+## 没有需要修复的？在这里停止。
+如果评审显示：
+- 所有 OUTCOMES_ACHIEVED: yes
+- 没有 ENVIRONMENT_ISSUES（空或 "none"）
+- 没有 BLOCKERS（空或 "none"）
+- 没有 ISSUES（空或 "none"）
 
-Then there is NOTHING for you to do. Simply:
-1. Delete the .task file
-2. Ensure ALL batched tasks are marked `- [x]` in TASKS.md
-3. STOP IMMEDIATELY - do NOT implement new code, do NOT start new tasks
+那么你没有任何事要做。只需：
+1. 删除 .task 文件
+2. 确保所有批处理任务在 TASKS.md 中标记为 `- [x]`
+3. 立即停止 - 不要实现新代码，不要开始新任务
 
-The FIX step ONLY fixes problems found by REVIEW. It does NOT:
-- Implement new features
-- Start the next task
-- Add improvements not flagged by REVIEW
-- Do anything beyond fixing flagged issues
+修复阶段**只**修复评审发现的问题。它**不**：
+- 实现新功能
+- 开始下一个任务
+- 添加评审未标记的改进
+- 做超出修复标记问题以外的任何事情
 
-If there are no issues, your entire job is: delete .task, mark all complete, done.
+如果没有问题，你的整个工作是：删除 .task，标记所有完成，完成。
 
-## Priority Order (only if issues exist)
-1. ❌ OUTCOMES not achieved - The task(s) aren't done! Fix implementation first.
-2. 🔧 ENVIRONMENT_ISSUES - CREATE REMEDIATION TASKS
-3. 🔴 BLOCKERS - code issues that must be fixed
-4. 🟡 ISSUES - fix if straightforward
-5. 🟢 SUGGESTIONS - fix only if trivial
+## 优先级顺序（仅当存在问题时）
+1. ❌ 结果未达成 - 任务未完成！先修复实现。
+2. 🔧 环境问题 - 创建修复任务
+3. 🔴 BLOCKERS - 必须修复的代码问题
+4. 🟡 问题 - 如果直接就修复
+5. 🟢 建议 - 仅当琐碎时修复
 
-## If ANY OUTCOME not achieved
-The implementation doesn't do what the task required. You must:
-1. Read EXPECTED_OUTCOMES and OUTCOMES_ACHIEVED from .task
-2. Figure out WHY each failed outcome wasn't achieved
-3. Fix the implementation until ALL outcomes ARE achieved
-4. Re-verify the outcomes yourself before proceeding
-This is NOT optional - a task without its outcome is not done.
+## 如果任何结果未达成
+实现没有完成任务要求。你必须：
+1. 从 .task 阅读 EXPECTED_OUTCOMES 和 OUTCOMES_ACHIEVED
+2. 找出每个失败结果未达成的原因
+3. 修复实现直到**所有**结果都达成
+4. 在继续之前自己重新验证结果
+这不是可选的 - 没有结果的任务未完成。
 
-## Handling ENVIRONMENT_ISSUES (Critical!)
-Environment issues are SOLVABLE. You must:
-1. Read the REMEDIATION from .task file
-2. ADD A NEW TASK to TASKS.md to fix the environment issue
-   - Insert it BEFORE the current tasks (so it runs next iteration)
-   - Format: `- [ ] Setup: [remediation action]`
-3. Unmark current tasks back to `- [ ]` (they will retry after environment is fixed)
-4. Delete .task file
-5. DO NOT mark as blocked - the environment task will fix it
+## 处理环境问题（关键！）
+环境问题是可解决的。你必须：
+1. 从 .task 文件阅读 REMEDIATION
+2. 向 TASKS.md 添加新任务以修复环境问题
+   - 将其插入当前任务**之前**（以便下次迭代运行）
+   - 格式：`- [ ] Setup: [修复操作]`
+3. 将当前任务取消标记回 `- [ ]`（环境修复后它们会重试）
+4. 删除 .task 文件
+5. 不要标记为阻塞 - 环境任务会修复它
 
-## Your Job for Code Issues
-1. Fix BLOCKERS (mandatory)
-2. Fix ISSUES (should fix)
-3. Consider SUGGESTIONS (nice to have)
-4. Re-run TEST_COMMAND to confirm
-5. Commit fixes: "fix: [description]"
+## 你对代码问题的工作
+1. 修复BLOCKERS（必须）
+2. 修复问题（应该修复）
+3. 考虑建议（最好有）
+4. 重新运行 TEST_COMMAND 确认
+5. 提交修复："fix: [描述]"
 
-## NEVER Cheat on Tests
-When a test fails, you MUST fix the IMPLEMENTATION, not the test.
+## 永远不要在测试上作弊
+当测试失败时，你必须修复实现，而不是测试。
 
-**Forbidden "fixes" that are actually cheating:**
-- Mocking a return value to make the test pass
-- Weakening assertions (changing `toBe(5)` to `toBeTruthy()`)
-- Removing test cases that fail
-- Adding `.skip` or commenting out failing tests
-- Stubbing the function being tested to return expected values
+**禁止的"修复"实际上是作弊：**
+- Mock 返回值使测试通过
+- 削弱断言（将 `toBe(5)` 改为 `toBeTruthy()`）
+- 删除失败的测试用例
+- 添加 `.skip` 或注释掉失败的测试
+- 将被测试的函数 stub 为返回预期值
 
-**The ONLY time you may change a test:**
-- The test itself has a bug (wrong expected value, typo)
-- Upstream changes made the test's assumptions invalid (API changed, schema changed)
-- AND you verify the test still tests meaningful behavior after your change
+**唯一可以更改测试的情况：**
+- 测试本身有 bug（错误的期望值、拼写错误）
+- 上游更改使测试的假设无效（API 更改、架构更改）
+- 并且你验证测试在更改后仍然测试有意义的行为
 
-## After Fixing
-If all fixed + tests pass:
-- Delete .task file
-- Ensure ALL batched tasks are marked `- [x]` in TASKS.md (with note if useful)
+## 修复后
+如果所有修复 + 测试通过：
+- 删除 .task 文件
+- 确保所有批处理任务在 TASKS.md 中标记为 `- [x]`（如果有用则添加备注）
 
-If environment issue found:
-- Add remediation task to TASKS.md (see above)
-- Unmark current tasks
-- Delete .task file
-- CONTINUE (not blocked!)
+如果发现环境问题：
+- 向 TASKS.md 添加修复任务（见上文）
+- 取消标记当前任务
+- 删除 .task 文件
+- 继续（未阻塞！）
 
-If TRUE code blocker (rare - only security/data issues with no fix):
-- Unmark tasks in TASKS.md back to `- [ ]`
-- Add blocker note: `- [ ] Task description ⚠️ Blocked: [reason]`
-- Keep .task file for context
+如果真正的代码BLOCKERS（罕见 - 只有无法修复的安全/数据问题）：
+- 将 TASKS.md 中的任务取消标记回 `- [ ]`
+- 添加BLOCKERS备注：`- [ ] 任务描述 ⚠️ 被阻塞：[原因]`
+- 保留 .task 文件作为上下文
 BATCH_FIX_EOF
 }
 
