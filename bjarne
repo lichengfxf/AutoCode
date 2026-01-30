@@ -224,7 +224,7 @@ log_failure() {
     local fail_file="$LOG_DIR/failure_${timestamp//[: -]/_}.log"
 
     {
-        echo "=== BJARNE FAILURE LOG ==="
+        echo "=== BJARNE 故障日志 ==="
         echo "Timestamp: $timestamp"
         echo "Phase: $phase"
         echo "Attempt: $attempt/$MAX_RETRIES"
@@ -233,22 +233,22 @@ log_failure() {
         echo "Working directory: $(pwd)"
         echo "Safe mode: $SAFE_MODE"
         echo ""
-        echo "=== CLAUDE OUTPUT ==="
+        echo "=== CLAUDE 输出 ==="
         echo "$output"
         echo ""
-        echo "=== ACTUAL PROMPT SENT ==="
+        echo "=== 实际发送的 PROMPT ==="
         echo "$prompt"
         echo ""
-        echo "=== CURRENT .task FILE (if exists) ==="
+        echo "=== 当前 .task 文件 (如果存在) ==="
         if [[ -f "$TASK_STATE" ]]; then
             cat "$TASK_STATE"
         else
-            echo "(no .task file)"
+            echo "(无 .task 文件)"
         fi
     } > "$fail_file"
 
     log "ERROR" "Failure logged to $fail_file"
-    echo -e "${YELLOW}  Failure details saved to: $fail_file${NC}"
+    echo -e "${YELLOW}  故障详情已保存到: $fail_file${NC}"
 }
 
 # Safe mode (Docker) settings
@@ -792,49 +792,49 @@ FIX_EOF
 get_verbose_output_rules() {
     cat << VERBOSE_EOF
 
-## MANDATORY: Verbose Command Output Redirection
+## 强制：详细命令输出重定向
 
-**YOU MUST FOLLOW THESE RULES. NO EXCEPTIONS.**
+**你必须遵循这些规则。无例外。**
 
-**Log folder for this session**: $BJARNE_TMP_DIR
+**本次会话的日志文件夹**: $BJARNE_TMP_DIR
 
-### MANDATORY REDIRECTION - You MUST redirect these commands:
-- **Package managers**: npm, yarn, pnpm, pip, pip3, cargo, go get/build, composer, bundle, maven, gradle, apt, brew
-- **Build tools**: webpack, vite, tsc, esbuild, rollup, make, cmake, msbuild, gcc, g++, rustc, javac
-- **Container tools**: docker build, docker pull, docker run, docker-compose
-- **Test runners**: npm test, yarn test, jest, pytest, cargo test, go test, phpunit, rspec, mocha, vitest
-- **Database tools**: migrations, db:push, db:pull, prisma, drizzle, typeorm, sequelize
-- **Linters/Formatters**: eslint, prettier, black, flake8, clippy
+### 强制重定向 - 你必须重定向这些命令:
+- **包管理器**: npm, yarn, pnpm, pip, pip3, cargo, go get/build, composer, bundle, maven, gradle, apt, brew
+- **构建工具**: webpack, vite, tsc, esbuild, rollup, make, cmake, msbuild, gcc, g++, rustc, javac
+- **容器工具**: docker build, docker pull, docker run, docker-compose
+- **测试运行器**: npm test, yarn test, jest, pytest, cargo test, go test, phpunit, rspec, mocha, vitest
+- **数据库工具**: migrations, db:push, db:pull, prisma, drizzle, typeorm, sequelize
+- **代码检查/格式化**: eslint, prettier, black, flake8, clippy
 
-### REQUIRED PATTERN - Use this exact format:
+### 必需模式 - 使用此确切格式:
 \`\`\`bash
-# CORRECT - redirect and show exit code:
+# 正确 - 重定向并显示退出码:
 npm install > $BJARNE_TMP_DIR/install.log 2>&1; echo "Exit code: \$?"
 npm test > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
 npm run build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
 cargo build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
 pytest > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
 
-# WRONG - never do this:
-npm install          # FORBIDDEN
-npm test             # FORBIDDEN
-cargo build          # FORBIDDEN
+# 错误 - 绝不要这样做:
+npm install          # 禁止
+npm test             # 禁止
+cargo build          # 禁止
 \`\`\`
 
-### After running, check results with:
+### 运行后，使用以下命令检查结果:
 \`\`\`bash
-# If exit code was 0, check last few lines to confirm:
+# 如果退出码为 0，检查最后几行以确认:
 tail -20 $BJARNE_TMP_DIR/test.log
 
-# If exit code was non-zero, find errors:
+# 如果退出码非 0，查找错误:
 grep -i "error\|fail\|exception" $BJARNE_TMP_DIR/test.log | head -30
 \`\`\`
 
-### Commands that DON'T need redirection:
+### 不需要重定向的命令:
 - \`ls\`, \`cat\`, \`head\`, \`tail\`, \`grep\`, \`find\`
-- \`git status\`, \`git diff\`, \`git log\` (short output)
-- \`node script.js\` (when output is expected to be < 10 lines)
-- File reads and quick checks
+- \`git status\`, \`git diff\`, \`git log\` (短输出)
+- \`node script.js\` (当预期输出 < 10 行时)
+- 文件读取和快速检查
 
 VERBOSE_EOF
 }
@@ -1016,7 +1016,7 @@ $(get_verbose_output_rules)"
         # Write log header
         {
             echo "=============================================================================="
-            echo "CLAUDE OUTPUT LOG - Real-time"
+            echo "CLAUDE 输出日志 - 实时"
             echo "=============================================================================="
             echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "Phase: $phase"
@@ -1024,15 +1024,15 @@ $(get_verbose_output_rules)"
             echo "Prompt Size: $prompt_size bytes"
             echo ""
             echo "------------------------------------------------------------------------------"
-            echo "PROMPT SENT (first 5000 chars):"
+            echo "发送的 PROMPT (前 5000 字符):"
             echo "------------------------------------------------------------------------------"
             echo "${prompt:0:5000}"
             if [[ ${#prompt} -gt 5000 ]]; then
-                echo "... (truncated, total $prompt_size bytes)"
+                echo "... (已截断，总共 $prompt_size 字节)"
             fi
             echo ""
             echo "------------------------------------------------------------------------------"
-            echo "CLAUDE OUTPUT (real-time):"
+            echo "CLAUDE 输出 (实时):"
             echo "------------------------------------------------------------------------------"
         } > "$claude_log_file"
 
