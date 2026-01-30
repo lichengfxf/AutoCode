@@ -33,6 +33,21 @@
 # Uses .bjarne/tasks/<task-id>/ for state. Auto-creates branch and PR if git/gh available.
 #
 # idea.md/notes.md are freeform - write whatever you want. Bjarne will figure it out.
+#
+# PROMPTS DIRECTORY
+#
+# All AI prompts are stored in the prompts/ directory (relative to this script).
+# This separation allows prompts to be edited independently from the script logic.
+#
+# File Types:
+#   - *.md: Static prompts (loaded as-is)
+#   - *.template: Prompts requiring variable substitution
+#
+# To add or modify prompts:
+#   1. Edit/create files in the prompts/ directory
+#   2. Use load_prompt() for static content, load_prompt_with_subst() for templates
+#   3. See prompts/README.md for detailed documentation
+#
 
 set -e
 
@@ -264,6 +279,42 @@ IMAGE_NAME=""
 #==============================================================================
 # PROMPTS - Defined early so both task mode and main loop can use them
 #==============================================================================
+#
+# The prompts/ directory contains all AI prompt templates used by bjarne.
+#
+# Directory Structure:
+#   prompts/
+#   ├── plan.md              - Main planning phase prompt
+#   ├── execute.md           - Code execution phase prompt
+#   ├── review.md            - Review and validation prompt
+#   ├── fix.md               - Error fixing prompt
+#   ├── init.md              - Project initialization prompt
+#   ├── refresh.md           - Context refresh prompt
+#   ├── decompose.md         - Task decomposition prompt
+#   ├── finalize-worktree.md - Finalization with git worktree support
+#   ├── finalize.md          - Standard finalization prompt
+#   ├── batch-plan.md.template     - Batch mode planning (requires $batch_size)
+#   ├── batch-execute.md           - Batch mode execution
+#   ├── batch-review.md            - Batch mode review
+#   ├── batch-fix.md               - Batch mode fixing
+#   ├── dockerfile.template        - Dockerfile generation (requires $base_image)
+#   └── verbose-rules.template     - Verbose output rules (requires $BJARNE_TMP_DIR)
+#
+# File Naming Conventions:
+#   - *.md files: Static prompts loaded as-is
+#   - *.template files: Require variable substitution (use load_prompt_with_subst)
+#
+# Usage Guidelines:
+#   - Use load_prompt() for static *.md files
+#   - Use load_prompt_with_subst() for *.template files or when variables need substitution
+#   - Always specify only the variables you intend to replace for safety
+#
+# Adding New Prompts:
+#   1. Create the file in prompts/ directory
+#   2. Use .md extension for static content, .template for content with variables
+#   3. Load using load_prompt() or load_prompt_with_subst() as appropriate
+#   4. Variables in templates should use $VAR_NAME format and be documented
+#
 
 # Load prompt content from file with support for relative and absolute paths
 # Usage: load_prompt <prompt_file>
@@ -1390,23 +1441,6 @@ MAIN_MODE_HEADER="## 开发模式 - 测试要求
 
 "
 
-# Batch mode prompts (override base prompts when batching)
-get_batch_plan_prompt() {
-    local batch_size="$1"
-    load_prompt_with_subst "batch-plan.md.template" '$batch_size'
-}
-
-get_batch_execute_prompt() {
-    load_prompt "batch-execute.md"
-}
-
-get_batch_review_prompt() {
-    load_prompt "batch-review.md"
-}
-
-get_batch_fix_prompt() {
-    load_prompt "batch-fix.md"
-}
 
 # Load context fresh each iteration
 load_context() {
@@ -1460,10 +1494,10 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # Select prompts based on batch mode
     if [[ "$BATCH_MODE" == true ]]; then
-        ACTIVE_PLAN_PROMPT=$(get_batch_plan_prompt "$BATCH_SIZE")
-        ACTIVE_EXECUTE_PROMPT=$(get_batch_execute_prompt)
-        ACTIVE_REVIEW_PROMPT=$(get_batch_review_prompt)
-        ACTIVE_FIX_PROMPT=$(get_batch_fix_prompt)
+        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" '$batch_size')
+        ACTIVE_EXECUTE_PROMPT=$(load_prompt "batch-execute.md")
+        ACTIVE_REVIEW_PROMPT=$(load_prompt "batch-review.md")
+        ACTIVE_FIX_PROMPT=$(load_prompt "batch-fix.md")
     else
         ACTIVE_PLAN_PROMPT="$PLAN_PROMPT"
         ACTIVE_EXECUTE_PROMPT="$EXECUTE_PROMPT"
