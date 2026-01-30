@@ -273,7 +273,7 @@ read -r -d '' PLAN_PROMPT << 'PLAN_EOF' || true
 规划之前，确认任务行以 `- [ ]` 开头（括号之间有空格）。
 如果以 `- [x]` 开头，表示已完成 - 不要规划它，不要创建 .task 文件。
 
-## 写入 .task 文件（增强模板）：
+## 你要写入的 .task 文件模板：
 ```
 TASK: [TASKS.md 中的确切任务文本]
 ACTION: [要实现什么]
@@ -437,7 +437,7 @@ read -r -d '' REVIEW_PROMPT << 'REVIEW_EOF' || true
 - 修复阶段会自动处理你报告的所有内容
 - 直接、实事求是 - 不需要客套话
 
-根据 .task 计划评审实现结果。
+根据 .task文件 计划评审实现结果。
 
 ## 1. 首先验证结果（最重要！）
 从 .task 文件中阅读 EXPECTED_OUTCOME 和 OUTCOME_VERIFICATION。
@@ -558,7 +558,7 @@ TECH_DEBT:
 - 是否有待处理任务会用到它？→ 不是问题，注明"任务 X 的脚手架"
 - 没有待处理任务需要它？→ 标记为问题：移除无用代码
 
-## 追加到 .task：
+## 追加到 .task文件：
 ```
 REVIEW_RESULT:
 OUTCOME_ACHIEVED: yes/no
@@ -632,7 +632,7 @@ read -r -d '' FIX_PROMPT << 'FIX_EOF' || true
 - 不开始下一个任务
 - 不做超出修复标记问题以外的任何事情
 
-如果没有问题，你的整个工作是：删除 .task，标记任务完成。
+如果没有问题，你的整个工作是：删除 .task文件，标记任务完成。
 
 ## 优先级顺序（仅当存在问题时）
 1. ❌ OUTCOME_ACHIEVED: no - 任务未完成！先修复实现。
@@ -663,7 +663,7 @@ read -r -d '' FIX_PROMPT << 'FIX_EOF' || true
 
 ## 如果 OUTCOME_ACHIEVED 是 "no"
 这说明没有完成任务要求。你必须：
-1. 从 .task 阅读 EXPECTED_OUTCOME 和 OUTCOME_EVIDENCE
+1. 从 .task文件 阅读 EXPECTED_OUTCOME 和 OUTCOME_EVIDENCE
 2. 找出结果未达成的原因（根因分析）
 3. 修复实现直到结果**确实**达成
 4. 在继续之前自己重新验证结果
@@ -2428,7 +2428,7 @@ get_batch_review_prompt() {
 - 修复阶段会自动处理你报告的所有内容
 - 直接、实事求是 - 不需要客套话
 
-根据 .task 计划评审实现结果 - 验证所有批处理的任务。
+根据 .task文件 计划评审实现结果 - 验证所有批处理的任务。
 
 ## 1. 验证所有结果（最重要！）
 从 .task 文件中阅读 EXPECTED_OUTCOMES 和 OUTCOME_VERIFICATION。
@@ -2494,7 +2494,7 @@ get_batch_review_prompt() {
 - 🟡 问题：bug、逻辑错误、缺少错误处理
 - 🟢 建议：样式改进、小优化
 
-## 追加到 .task：
+## 追加到 .task文件：
 ```
 REVIEW_RESULT:
 OUTCOMES_ACHIEVED:
@@ -2558,7 +2558,7 @@ get_batch_fix_prompt() {
 - 添加评审未标记的改进
 - 做超出修复标记问题以外的任何事情
 
-如果没有问题，你的整个工作是：删除 .task，标记所有完成，完成。
+如果没有问题，你的整个工作是：删除 .task文件，标记所有完成，完成。
 
 ## 优先级顺序（仅当存在问题时）
 1. ❌ 结果未达成 - 任务未完成！先修复实现。
@@ -2569,7 +2569,7 @@ get_batch_fix_prompt() {
 
 ## 如果任何结果未达成
 实现没有完成任务要求。你必须：
-1. 从 .task 阅读 EXPECTED_OUTCOMES 和 OUTCOMES_ACHIEVED
+1. 从 .task文件 阅读 EXPECTED_OUTCOMES 和 OUTCOMES_ACHIEVED
 2. 找出每个失败结果未达成的原因
 3. 修复实现直到**所有**结果都达成
 4. 在继续之前自己重新验证结果
