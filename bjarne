@@ -59,6 +59,10 @@ BJARNE_PROJECT_ROOT="$(pwd)"
 LOG_DIR="$BJARNE_PROJECT_ROOT/.bjarne/logs"
 LOG_FILE="$LOG_DIR/bjarne.log"
 
+# Script directory and prompts location (use absolute path for reliability)
+BJARNE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROMPTS_DIR="$BJARNE_SCRIPT_DIR/prompts"
+
 # Auto-update settings
 BJARNE_CONFIG_DIR="$HOME/.bjarne"
 BJARNE_LAST_UPDATE_CHECK="$BJARNE_CONFIG_DIR/last_update_check"
@@ -260,6 +264,21 @@ IMAGE_NAME=""
 #==============================================================================
 # PROMPTS - Defined early so both task mode and main loop can use them
 #==============================================================================
+
+# Load prompt content from markdown files in prompts/ directory
+# Usage: load_prompt <filename>
+# Returns: 0 on success, 1 if file not found
+load_prompt() {
+    local prompt_file="$1"
+    local full_path="$PROMPTS_DIR/$prompt_file"
+
+    if [[ ! -f "$full_path" ]]; then
+        log "ERROR" "Prompt file not found: $full_path"
+        return 1
+    fi
+
+    cat "$full_path"
+}
 
 read -r -d '' PLAN_PROMPT << 'PLAN_EOF' || true
 # 规划阶段
