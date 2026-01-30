@@ -280,6 +280,33 @@ load_prompt() {
     cat "$full_path"
 }
 
+# Load prompt content from template files and perform variable substitution
+# Usage: load_prompt_with_subst <template_file> [variables_to_substitute]
+# Returns: 0 on success, 1 if file not found
+# Examples:
+#   load_prompt_with_subst "dockerfile.template"              # substitute all env vars
+#   load_prompt_with_subst "dockerfile.template" "$base_image" # only substitute $base_image
+load_prompt_with_subst() {
+    local template_file="$1"
+    local full_path="$PROMPTS_DIR/$template_file"
+
+    if [[ ! -f "$full_path" ]]; then
+        log "ERROR" "Template file not found: $full_path"
+        return 1
+    fi
+
+    shift  # Remove filename from args
+    local vars="$*"  # Get variable list (optional)
+
+    if [[ -n "$vars" ]]; then
+        # Only substitute specified variables
+        envsubst "$vars" < "$full_path"
+    else
+        # Substitute all environment variables
+        envsubst < "$full_path"
+    fi
+}
+
 read -r -d '' PLAN_PROMPT << 'PLAN_EOF' || true
 # 规划阶段
 
