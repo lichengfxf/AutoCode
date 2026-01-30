@@ -551,7 +551,7 @@ $(get_verbose_output_rules)"
         # Write log header
         {
             echo "=============================================================================="
-            echo "CLAUDE 输出日志 - 实时"
+            echo "CLAUDE 输入/输出日志"
             echo "=============================================================================="
             echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "Phase: $phase"
@@ -559,15 +559,12 @@ $(get_verbose_output_rules)"
             echo "Prompt Size: $prompt_size bytes"
             echo ""
             echo "------------------------------------------------------------------------------"
-            echo "发送的 PROMPT (前 5000 字符):"
+            echo "发送给Claude的 PROMPT (总共 $prompt_size 字节） :"
             echo "------------------------------------------------------------------------------"
-            echo "${prompt:0:5000}"
-            if [[ ${#prompt} -gt 5000 ]]; then
-                echo "... (已截断，总共 $prompt_size 字节)"
-            fi
+            echo "$prompt"
             echo ""
             echo "------------------------------------------------------------------------------"
-            echo "CLAUDE 输出 (实时):"
+            echo "CLAUDE 输出:"
             echo "------------------------------------------------------------------------------"
         } > "$claude_log_file"
 
@@ -1430,21 +1427,10 @@ if [[ ! -f "$CONTEXT_FILE" ]]; then
     echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
 fi
 
-# Main mode testing guidance (injected into context)
-MAIN_MODE_HEADER="## 开发模式 - 测试要求
-
-**测试对反馈循环至关重要：**
-- 如果还没有测试 → 标记为 🟡 问题：\"无测试 - 为此功能添加测试\"
-- 如果有测试但未覆盖新代码 → 标记为 🟡 问题：\"添加测试覆盖\"
-- 测试让你验证实现是否有效 - 没有测试你就是在盲操作
-- 没有测试的功能不是真正完成的
-
-"
-
 
 # Load context fresh each iteration
 load_context() {
-    CONTEXT="$MAIN_MODE_HEADER"
+    CONTEXT=""
     if [[ -f "$CONTEXT_FILE" ]]; then
         CONTEXT+=$(cat "$CONTEXT_FILE")
     fi
@@ -1494,7 +1480,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # Select prompts based on batch mode
     if [[ "$BATCH_MODE" == true ]]; then
-        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" '$batch_size')
+        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" '$BATCH_SIZE')
         ACTIVE_EXECUTE_PROMPT=$(load_prompt "batch-execute.md")
         ACTIVE_REVIEW_PROMPT=$(load_prompt "batch-review.md")
         ACTIVE_FIX_PROMPT=$(load_prompt "batch-fix.md")
@@ -1507,9 +1493,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # PLAN
     echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
-    if ! run_claude "$CONTEXT
-
-$ACTIVE_PLAN_PROMPT" "PLAN"; then
+    if ! run_claude "$ACTIVE_PLAN_PROMPT" "PLAN"; then
         echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
