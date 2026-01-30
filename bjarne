@@ -7,6 +7,7 @@
 #   bjarne task [opts] "desc"       - Run isolated single-task mode
 #   bjarne [opts] [n]               - Run n iterations (default 25)
 #   bjarne --rebuild                - Force rebuild Docker image (safe mode only)
+#   bjarne --update                 - Check for updates immediately
 #   bjarne --disable-auto-update    - Disable automatic update checks
 #   bjarne --enable-auto-update     - Re-enable automatic update checks
 #
@@ -69,8 +70,10 @@ BJARNE_REMOTE_URL="https://raw.githubusercontent.com/lichengfxf/AutoCode/refs/he
 # AUTO-UPDATE FUNCTIONS
 #==============================================================================
 
-# Check for updates (runs every 2 days)
+# Check for updates (runs every 2 days, or immediately if --check-now is passed)
 check_for_updates() {
+    local check_now="$1"  # If "true", skip the time interval check
+
     # Skip if auto-update is disabled
     if [[ -f "$BJARNE_UPDATE_DISABLED" ]]; then
         return 0
@@ -81,11 +84,13 @@ check_for_updates() {
 
     local now=$(date +%s)
 
-    # Check if we need to check (every 2 days)
-    if [[ -f "$BJARNE_LAST_UPDATE_CHECK" ]]; then
-        local last_check=$(cat "$BJARNE_LAST_UPDATE_CHECK" 2>/dev/null || echo "0")
-        if (( now - last_check < BJARNE_UPDATE_INTERVAL )); then
-            return 0  # Not time to check yet
+    # Check if we need to check (every 2 days), unless --check-now is passed
+    if [[ "$check_now" != "true" ]]; then
+        if [[ -f "$BJARNE_LAST_UPDATE_CHECK" ]]; then
+            local last_check=$(cat "$BJARNE_LAST_UPDATE_CHECK" 2>/dev/null || echo "0")
+            if (( now - last_check < BJARNE_UPDATE_INTERVAL )); then
+                return 0  # Not time to check yet
+            fi
         fi
     fi
 
@@ -162,6 +167,13 @@ fi
 if [[ "$1" == "--enable-auto-update" ]]; then
     rm -f "$BJARNE_UPDATE_DISABLED"
     echo -e "${GREEN}自动更新已启用。${NC}"
+    exit 0
+fi
+
+if [[ "$1" == "--update" ]]; then
+    # Force update check now, ignoring the 2-day interval
+    echo -e "${CYAN}正在检查更新...${NC}"
+    check_for_updates "true"
     exit 0
 fi
 
