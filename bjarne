@@ -265,13 +265,26 @@ IMAGE_NAME=""
 # PROMPTS - Defined early so both task mode and main loop can use them
 #==============================================================================
 
-# Load prompt content from markdown files in prompts/ directory
-# Usage: load_prompt <filename>
+# Load prompt content from file with support for relative and absolute paths
+# Usage: load_prompt <prompt_file>
+# Args:
+#   prompt_file: Can be relative (e.g., "plan.md") or absolute (e.g., "/full/path/to/plan.md")
 # Returns: 0 on success, 1 if file not found
+# Note: Relative paths are resolved relative to $PROMPTS_DIR
 load_prompt() {
     local prompt_file="$1"
-    local full_path="$PROMPTS_DIR/$prompt_file"
+    local full_path
 
+    # Determine if path is absolute or relative
+    if [[ "$prompt_file" = /* ]]; then
+        # Absolute path - use as-is
+        full_path="$prompt_file"
+    else
+        # Relative path - resolve relative to PROMPTS_DIR
+        full_path="$PROMPTS_DIR/$prompt_file"
+    fi
+
+    # Validate file exists
     if [[ ! -f "$full_path" ]]; then
         log "ERROR" "Prompt file not found: $full_path"
         return 1
@@ -282,14 +295,28 @@ load_prompt() {
 
 # Load prompt content from template files and perform variable substitution
 # Usage: load_prompt_with_subst <template_file> [variables_to_substitute]
+# Args:
+#   template_file: Can be relative (e.g., "dockerfile.template") or absolute path
+#   variables_to_substitute: Optional list of variables to substitute (e.g., "$base_image")
 # Returns: 0 on success, 1 if file not found
 # Examples:
 #   load_prompt_with_subst "dockerfile.template"              # substitute all env vars
 #   load_prompt_with_subst "dockerfile.template" "$base_image" # only substitute $base_image
+# Note: Relative paths are resolved relative to $PROMPTS_DIR
 load_prompt_with_subst() {
     local template_file="$1"
-    local full_path="$PROMPTS_DIR/$template_file"
+    local full_path
 
+    # Determine if path is absolute or relative
+    if [[ "$template_file" = /* ]]; then
+        # Absolute path - use as-is
+        full_path="$template_file"
+    else
+        # Relative path - resolve relative to PROMPTS_DIR
+        full_path="$PROMPTS_DIR/$template_file"
+    fi
+
+    # Validate file exists
     if [[ ! -f "$full_path" ]]; then
         log "ERROR" "Template file not found: $full_path"
         return 1
