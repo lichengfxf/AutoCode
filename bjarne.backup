@@ -1,0 +1,2789 @@
+#!/bin/bash
+# Bjarne - Autonomous AI development system
+#
+# Commands:
+#   bjarne init [--safe] <idea.md>  - Bootstrap project from idea file
+#   bjarne refresh <notes.md>       - Add tasks from freeform notes
+#   bjarne task [opts] "desc"       - Run isolated single-task mode
+#   bjarne [opts] [n]               - Run n iterations (default 25)
+#   bjarne --rebuild                - Force rebuild Docker image (safe mode only)
+#   bjarne --update                 - Check for updates immediately
+#   bjarne --disable-auto-update    - Disable automatic update checks
+#   bjarne --enable-auto-update     - Re-enable automatic update checks
+#
+# Main loop options:
+#   --batch             - Enable batch mode (up to 5 related tasks per iteration)
+#   --batch=N, -bN      - Enable batch mode with custom size (up to N tasks)
+#                         Tasks are grouped by natural relatedness, not forced
+#
+# Task mode options:
+#   --safe              - Run in Docker container
+#   -f, --file <file>   - Read task description from file
+#   --branch <name>     - Use custom branch name
+#   --no-pr             - Skip PR creation
+#   -n <num>            - Max iterations (default 25)
+#
+# Safe mode (--safe): Runs Claude in a Docker container that can only access
+# the project directory. Use for unattended runs to prevent accidental
+# damage to other files on the system.
+#
+# Loop: PLAN → EXECUTE → REVIEW → FIX
+#
+# Task mode: Isolated single-task fixes. Does NOT touch CONTEXT.md, TASKS.md.
+# Uses .bjarne/tasks/<task-id>/ for state. Auto-creates branch and PR if git/gh available.
+#
+# idea.md/notes.md are freeform - write whatever you want. Bjarne will figure it out.
+
+set -e
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Files
+TASK_FILE="TASKS.md"
+CONTEXT_FILE="CONTEXT.md"
+SPECS_DIR="specs"
+TASK_STATE=".task"
+
+# Retry settings
+MAX_RETRIES=5
+RETRY_DELAY=10
+
+# Logging (use absolute path to survive worktree cd)
+BJARNE_PROJECT_ROOT="$(pwd)"
+LOG_DIR="$BJARNE_PROJECT_ROOT/.bjarne/logs"
+LOG_FILE="$LOG_DIR/bjarne.log"
+
+# Auto-update settings
+BJARNE_CONFIG_DIR="$HOME/.bjarne"
+BJARNE_LAST_UPDATE_CHECK="$BJARNE_CONFIG_DIR/last_update_check"
+BJARNE_UPDATE_DISABLED="$BJARNE_CONFIG_DIR/auto_update_disabled"
+BJARNE_UPDATE_INTERVAL=$((2 * 24 * 60 * 60))  # 2 days in seconds
+BJARNE_REMOTE_URL="https://raw.githubusercontent.com/lichengfxf/AutoCode/refs/heads/master/bjarne"
+
+#==============================================================================
+# AUTO-UPDATE FUNCTIONS
+#==============================================================================
+
+# Check for updates (runs every 2 days, or immediately if --check-now is passed)
+check_for_updates() {
+    local check_now="$1"  # If "true", skip the time interval check
+
+    # Skip if auto-update is disabled
+    if [[ -f "$BJARNE_UPDATE_DISABLED" ]]; then
+        return 0
+    fi
+
+    # Create config dir if needed
+    mkdir -p "$BJARNE_CONFIG_DIR"
+
+    local now=$(date +%s)
+
+    # Check if we need to check (every 2 days), unless --check-now is passed
+    if [[ "$check_now" != "true" ]]; then
+        if [[ -f "$BJARNE_LAST_UPDATE_CHECK" ]]; then
+            local last_check=$(cat "$BJARNE_LAST_UPDATE_CHECK" 2>/dev/null || echo "0")
+            if (( now - last_check < BJARNE_UPDATE_INTERVAL )); then
+                return 0  # Not time to check yet
+            fi
+        fi
+    fi
+
+    # Record this check time
+    echo "$now" > "$BJARNE_LAST_UPDATE_CHECK"
+
+    # Get path to this script
+    local script_path
+    script_path=$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")
+
+    # Fetch remote script to temp file
+    local temp_remote=$(mktemp)
+    if ! curl -fsSL "$BJARNE_REMOTE_URL" -o "$temp_remote" 2>/dev/null; then
+        rm -f "$temp_remote"
+        return 0  # Silently fail if can't fetch
+    fi
+
+    # Compare hashes
+    local local_hash=$(sha256sum "$script_path" 2>/dev/null | cut -d' ' -f1)
+    local remote_hash=$(sha256sum "$temp_remote" 2>/dev/null | cut -d' ' -f1)
+
+    if [[ "$local_hash" == "$remote_hash" ]]; then
+        rm -f "$temp_remote"
+        return 0  # Already up to date
+    fi
+
+    # Update available - ask user
+    echo -e "${CYAN}bjarne 有新版本可用。${NC}"
+    echo -n "是否更新? [y/N] "
+    read -r response
+
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}已跳过更新。${NC}"
+        rm -f "$temp_remote"
+        return 0
+    fi
+
+    # Perform update
+    echo -e "${CYAN}正在更新 bjarne...${NC}"
+
+    # Check if we need sudo
+    if [[ -w "$script_path" ]]; then
+        cp "$temp_remote" "$script_path"
+        chmod +x "$script_path"
+    else
+        echo -e "${YELLOW}需要提升权限来更新 ${script_path}${NC}"
+        if ! sudo cp "$temp_remote" "$script_path"; then
+            echo -e "${RED}更新失败 - 无法写入 ${script_path}${NC}"
+            rm -f "$temp_remote"
+            return 1
+        fi
+        sudo chmod +x "$script_path"
+    fi
+
+    rm -f "$temp_remote"
+
+    echo -e "${GREEN}bjarne 更新成功!${NC}"
+    echo -e "${YELLOW}请重新运行命令: bjarne $*${NC}"
+    exit 0
+}
+
+#==============================================================================
+# AUTO-UPDATE TOGGLE COMMANDS
+#==============================================================================
+
+if [[ "$1" == "--disable-auto-update" ]]; then
+    mkdir -p "$BJARNE_CONFIG_DIR"
+    touch "$BJARNE_UPDATE_DISABLED"
+    echo -e "${GREEN}自动更新已禁用。${NC}"
+    echo -e "要重新启用: bjarne --enable-auto-update"
+    exit 0
+fi
+
+if [[ "$1" == "--enable-auto-update" ]]; then
+    rm -f "$BJARNE_UPDATE_DISABLED"
+    echo -e "${GREEN}自动更新已启用。${NC}"
+    exit 0
+fi
+
+if [[ "$1" == "--update" ]]; then
+    # Force update check now, ignoring the 2-day interval
+    echo -e "${CYAN}正在检查更新...${NC}"
+    check_for_updates "true"
+    exit 0
+fi
+
+#==============================================================================
+# RUN UPDATE CHECK (before processing commands)
+#==============================================================================
+
+# Pass original args so the exit message can tell user what to re-run
+check_for_updates "$@"
+
+# Ensure log directory exists
+mkdir -p "$LOG_DIR"
+
+# Instance-specific temp folder for verbose command output
+# Uses PID + timestamp for uniqueness across concurrent instances
+BJARNE_INSTANCE_ID="$$_$(date +%s)"
+BJARNE_TMP_DIR="/tmp/bjarne-${BJARNE_INSTANCE_ID}"
+mkdir -p "$BJARNE_TMP_DIR"
+
+# Cleanup function for temp folder
+cleanup_temp() {
+    if [[ -d "$BJARNE_TMP_DIR" ]]; then
+        rm -rf "$BJARNE_TMP_DIR"
+    fi
+}
+
+# Trap signals to ensure cleanup on exit (normal, interrupt, terminate)
+trap cleanup_temp EXIT INT TERM
+
+# Log function
+log() {
+    local level="$1"
+    local msg="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [$level] $msg" >> "$LOG_FILE"
+}
+
+# Log with context (for failures)
+log_failure() {
+    local phase="$1"
+    local attempt="$2"
+    local exit_code="$3"
+    local output="$4"
+    local prompt_size="$5"
+    local prompt="$6"
+
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local fail_file="$LOG_DIR/failure_${timestamp//[: -]/_}.log"
+
+    {
+        echo "=== BJARNE 故障日志 ==="
+        echo "Timestamp: $timestamp"
+        echo "Phase: $phase"
+        echo "Attempt: $attempt/$MAX_RETRIES"
+        echo "Exit code: $exit_code"
+        echo "Prompt size: $prompt_size bytes"
+        echo "Working directory: $(pwd)"
+        echo "Safe mode: $SAFE_MODE"
+        echo ""
+        echo "=== CLAUDE 输出 ==="
+        echo "$output"
+        echo ""
+        echo "=== 实际发送的 PROMPT ==="
+        echo "$prompt"
+        echo ""
+        echo "=== 当前 .task 文件 (如果存在) ==="
+        if [[ -f "$TASK_STATE" ]]; then
+            cat "$TASK_STATE"
+        else
+            echo "(无 .task 文件)"
+        fi
+    } > "$fail_file"
+
+    log "ERROR" "Failure logged to $fail_file"
+    echo -e "${YELLOW}  故障详情已保存到: $fail_file${NC}"
+}
+
+# Safe mode (Docker) settings
+BJARNE_DIR=".bjarne"
+DOCKERFILE="$BJARNE_DIR/Dockerfile"
+SAFE_MODE=false
+IMAGE_NAME=""
+
+#==============================================================================
+# PROMPTS - Defined early so both task mode and main loop can use them
+#==============================================================================
+
+read -r -d '' PLAN_PROMPT << 'PLAN_EOF' || true
+# 规划阶段
+
+**重要提示：这是自动化流程的第1步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入下一步
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
+
+你正在从 TASKS.md 中规划**一个**任务。
+
+## 你的任务
+1. 阅读 CONTEXT.md 获取项目信息、架构和命令
+2. 阅读 TASKS.md - 找到第一个未选中的 `- [ ]` 任务
+   - **关键**：只规划标记为 `- [ ]` 的任务
+   - 跳过标记为 `- [x]` 的任务（已完成）
+3. **解析任务**：提取任务中的 Action 和 Outcome（格式：`Action → Outcome`）
+4. 阅读 specs/ 文件夹中的详细规范
+5. 搜索代码库中的现有模式、工具、组件
+6. 将计划写入 .task 文件
+
+## 停止：验证任务是否确实未选中
+规划之前，确认任务行以 `- [ ]` 开头（括号之间有空格）。
+如果以 `- [x]` 开头，表示已完成 - 不要规划它，不要创建 .task 文件。
+
+## 你要写入的 .task 文件模板：
+```
+TASK: [TASKS.md 中的确切任务文本]
+ACTION: [要实现什么]
+EXPECTED_OUTCOME: [如何验证成功 - 来自 → 部分]
+
+## 依赖分析
+DEPENDENCIES:
+- 前置条件: [需要先完成什么，如果无则填 "无"]
+- 影响范围: [会影响哪些模块/文件]
+
+EXISTING_CODE:
+- [可复用的文件/函数]
+
+## 风险评估
+RISK_ANALYSIS:
+- 风险等级: [低/中/高]
+- 风险描述: [可能的问题]
+- 缓解策略: [如何降低风险]
+- 回滚方案: [如果出问题如何快速回退]
+
+## 模式与规范
+PATTERNS:
+- [代码库中要遵循的模式]
+- [安全/性能最佳实践]
+
+## 实现计划
+PLAN:
+1. [具体步骤 - 注明涉及哪些文件]
+2. [具体步骤]
+
+FILES_TO_CREATE: [列表]
+FILES_TO_MODIFY: [列表]
+
+## 测试策略
+TEST_STRATEGY:
+- 单元测试: [如何测试这个功能]
+- 集成测试: [如何验证与其他模块的交互]
+- 手动验证: [机器验证之外的检查]
+
+TEST_COMMAND: [来自 CONTEXT.md 或检测到的命令]
+
+## 结果验证
+OUTCOME_VERIFICATION:
+- [具体检查以确认结果，例如 "grep 查找带 href=/login 的按钮"]
+- [curl 命令、文件检查或代码审查以验证]
+```
+
+## 规划原则
+1. **依赖优先**：先识别依赖，再规划步骤
+2. **风险意识**：高风险任务需要更详细的计划
+3. **最小影响**：修改范围最小化
+4. **可回滚**：每个变更都有回滚方案
+
+## 架构原则
+- 复用现有代码 - 先搜索
+- 合理时扩展现有文件
+- 每个文件单一明确职责
+- 遵循代码库中的现有模式
+- 匹配现有代码风格
+
+## 代码质量要点
+- 单一职责：每个函数只做一件事
+- 高内聚低耦合：模块内聚，模块间解耦
+- 错误处理：合理的异常捕获和日志
+- 命名清晰：表达意图，避免缩写
+
+不要实现。只做规划。
+PLAN_EOF
+
+read -r -d '' EXECUTE_PROMPT << 'EXEC_EOF' || true
+# 执行阶段
+
+**重要提示：这是自动化流程的第2步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 只需实现计划
+- 不要提问或请求批准 - 执行计划
+- 直接、实事求是 - 不需要客套话
+
+阅读 .task 文件。严格按照计划执行。
+
+**你的主要工作是实现 - 使用 Write 和 Edit 工具创建/修改文件。**
+规划阶段已经研究过代码库。信任计划中的 EXISTING_CODE 和 PATTERNS。
+实现时可以阅读文件，但要优先写代码而不是探索。
+
+## 实现原则
+
+### 测试驱动（如果适用）
+1. 先写验证逻辑（即使失败）
+2. 实现最小功能使测试通过
+3. 重构优化
+
+### 渐进式实现
+1. 先实现核心路径（Happy Path）
+2. 再处理边界情况和错误
+3. 最后优化性能
+
+## 执行规则
+- 按顺序执行 PLAN 步骤
+- 复用 EXISTING_CODE 中列出的代码
+- 遵循 PATTERNS 保持一致性
+- 匹配项目中的现有代码风格
+- 命名清晰，不要缩写
+
+## 错误处理规范
+- 明确的错误类型和错误码
+- 适当的日志记录（ERROR/WARN/INFO）
+- 错误恢复策略
+- 不吞掉异常
+
+## 代码质量要点
+
+### 单一职责
+- 每个函数只做一件事
+- 保持函数短小（建议 < 30 行）
+- 避免函数过多参数
+
+### 高内聚低耦合
+- 相关代码放在一起
+- 模块间通过接口交互
+- 减少直接依赖
+
+### 可读性
+- 注释解释为什么，而不是是什么
+- 复杂逻辑需要有注释
+- 命名表达意图
+
+### 安全性
+- 不硬编码密钥/密码
+- 输入验证和清理
+- 输出编码（防止 XSS）
+- 认证授权检查
+
+## 提交前自检清单
+在提交前检查：
+
+- [ ] 功能通过 OUTCOME_VERIFICATION 验证
+- [ ] 代码符合项目风格（ESLint/Prettier 通过）
+- [ ] 必要的错误处理已添加
+- [ ] 没有硬编码敏感信息
+- [ ] 日志级别适当
+- [ ] 新的依赖已添加到 package.json/requirements.txt
+- [ ] 临时代码已清理（TODO → 实际实现或记录）
+- [ ] 相关的测试已更新或添加
+
+## 完成时
+在 TASKS.md 中标记任务完成，如果学到了有用的东西可以加简短备注：
+- 简单完成：`- [x] 任务描述`
+- 带备注：`- [x] 任务描述 → 备注：[一行见解]`
+
+只有在有助于未来任务时才添加备注（例如"用了 X 而不是 Y"、"需要先完成 Z"）。
+
+然后提交代码："feat: [任务描述]"
+EXEC_EOF
+
+read -r -d '' REVIEW_PROMPT << 'REVIEW_EOF' || true
+# 评审阶段
+
+**重要提示：这是自动化流程的第3步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入修复阶段
+- 不要问"你想让我修复这个吗？"这类问题
+- 不要主动提出修改 - 只需记录发现
+- 修复阶段会自动处理你报告的所有内容
+- 直接、实事求是 - 不需要客套话
+
+根据 .task文件 计划评审实现结果。
+
+## 1. 首先验证结果（最重要！）
+从 .task 文件中阅读 EXPECTED_OUTCOME 和 OUTCOME_VERIFICATION。
+实际运行验证步骤以确认结果达成，例如：
+- 如果说"按钮存在且 href=/login" → grep/搜索它
+- 如果说"API 返回 200" → curl 端点
+- 如果说"显示错误消息" → 检查组件是否渲染它
+- 如果说"文件创建于 X" → 验证文件存在
+
+**如果结果未达成**：这是 🔴 BLOCKERS - 任务未完成。
+**如果结果达成**：继续代码质量检查。
+
+## 2. 检查计划符合性
+- 是否复用了 DEPENDENCIES/EXISTING_CODE 中列出的内容？
+- 是否遵循了 PATTERNS？
+- 所有 PLAN 步骤是否完成？
+
+## 3. 自动检测关注领域
+
+### 安全检查（系统化）
+根据实现的内容，检查相关领域：
+
+**如果涉及 auth/passwords/tokens/API keys：**
+- ✓ 输入验证和清理
+- ✓ 无硬编码密钥
+- ✓ 安全的令牌处理（加密存储、安全传输）
+
+**如果涉及 database/SQL：**
+- ✓ 预处理语句（防止 SQL 注入）
+- ✓ 正确的错误处理
+- ✓ 连接字符串安全
+
+**如果涉及用户输入/表单：**
+- ✓ 输入验证（类型、长度、格式）
+- ✓ XSS 防护（转义输出、CSP 策略）
+
+**如果涉及 API 端点：**
+- ✓ 正确的响应格式
+- ✓ 错误响应（不泄露敏感信息）
+- ✓ 身份验证检查
+- ✓ 速率限制（如适用）
+
+**如果涉及 async/state：**
+- ✓ 竞态条件检查
+- ✓ 错误状态处理
+- ✓ 超时处理
+
+**如果涉及 UI：**
+- ✓ 匹配设计系统（如果存在 specs/DESIGN_SYSTEM.md）
+- ✓ 可访问性基础（ARIA、键盘导航）
+
+### 性能与可维护性（新增）
+
+**性能评估：**
+- 算法复杂度是否合理？（O(n) vs O(n²)）
+- 是否有明显的性能瓶颈？
+- 数据库查询是否优化？（N+1 问题、缺少索引）
+- 是否有不必要的重复计算？
+- 内存使用是否合理？（大对象拷贝、内存泄漏风险）
+
+**可维护性评估：**
+- 代码复杂度是否过高？（圈复杂度 > 10 需要关注）
+- 是否有重复代码？（DRY 原则）
+- 函数是否过长？（> 50 行考虑拆分）
+- 命名是否表达意图？
+- 是否有魔法数字/字符串？（应该用常量）
+
+**技术债务检测：**
+- 是否有临时代码（TODO/FIXME）？
+- 是否有硬编码配置？
+- 是否有绕过正常流程的 hack？
+- 是否缺少必要的错误处理？
+
+标记技术债务：
+```
+TECH_DEBT:
+- [描述] → 优先级：[高/中/低] → 建议：[如何改进]
+```
+
+## 4. 运行检查
+使用 .task 文件中的 TEST_COMMAND（或从 CONTEXT.md 检测）
+
+## 5. 测试覆盖
+检查项目中存在的测试基础设施：
+- 如果存在测试 → 运行它们，确保新代码有覆盖
+- 如果没有测试 → 标记为问题："缺少测试 - 添加测试覆盖"
+
+## 6. 按类型和严重程度分类问题
+
+### 问题类型：
+- 🔧 环境：缺少工具、依赖项、容器配置错误、需要配置
+- 💻 代码：bug、逻辑错误、安全问题、缺少错误处理
+- ⚡ 性能：性能瓶颈、资源浪费
+- 🔧 可维护性：代码复杂、重复、命名不清
+
+### 严重程度：
+- 🔴 BLOCKERS：安全漏洞、数据丢失风险、崩溃、结果未达成
+- 🟡 问题：bug、逻辑错误、缺少错误处理、性能问题
+- 🟢 建议：样式改进、小优化、可维护性改进
+- 📝 技术债务：临时代码、需要重构的代码
+
+## 7. 环境问题处理
+如果遇到环境问题（缺少工具、依赖、配置错误）：
+- 这不是 BLOCKERS - 这是可解决的问题
+- 示例："未安装 Chrome"、"缺少 npm 包"、"Docker 需要配置"
+- 标记为：🔧 环境问题（不是 BLOCKERS）
+- 包含 REMEDIATION：需要安装/配置什么来修复
+
+## 8. 预先存在的问题
+如果发现构建失败、测试失败或其他问题：
+- 即使它们在当前任务**之前**就存在也要标记
+- 不要 Dismiss 问题为"预先存在的，不阻塞"
+- 损坏的代码库就是损坏的代码库 - 必须修复
+- 如果某些东西失败（db:push、测试、构建），标记为问题
+
+## 9. 根据待处理任务检查
+在标记未使用代码之前，检查 TASKS.md：
+- 是否有待处理任务会用到它？→ 不是问题，注明"任务 X 的脚手架"
+- 没有待处理任务需要它？→ 标记为问题：移除无用代码
+
+## 追加到 .task文件：
+```
+REVIEW_RESULT:
+OUTCOME_ACHIEVED: yes/no
+OUTCOME_EVIDENCE: [你检查了什么以及发现了什么]
+
+BUILD_PASSED: yes/no
+TESTS_PASSED: yes/no
+
+ENVIRONMENT_ISSUES:
+- [类型] [描述] → REMEDIATION: [如何修复]
+
+BLOCKERS:
+- [如果有 - 包括结果未达成的情况]
+
+ISSUES:
+- [如果有]
+
+PERFORMANCE_ISSUES:
+- [如果有性能问题]
+
+MAINTAINABILITY_ISSUES:
+- [如果有可维护性问题]
+
+TECH_DEBT:
+- [如果有技术债务]
+
+SUGGESTIONS:
+- [如果有，简要]
+```
+
+如果一切正常，写入：
+```
+REVIEW_RESULT:
+OUTCOME_ACHIEVED: yes
+OUTCOME_EVIDENCE: [简要证明]
+BUILD_PASSED: yes
+TESTS_PASSED: yes
+ISSUES: none
+PERFORMANCE_ISSUES: none
+MAINTAINABILITY_ISSUES: none
+TECH_DEBT: none
+```
+REVIEW_EOF
+
+read -r -d '' FIX_PROMPT << 'FIX_EOF' || true
+# 修复阶段
+
+**重要提示：这是自动化流程的第4步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 自动修复评审发现的问题
+- 不要提问或请求批准 - 只修复问题
+- 直接、实事求是 - 不需要客套话
+
+阅读 .task 文件中的 REVIEW_RESULT。按优先级修复问题。
+
+## 没有需要修复的？在这里停止。
+如果 REVIEW 显示：
+- OUTCOME_ACHIEVED: yes
+- 没有 ENVIRONMENT_ISSUES（空或 "none"）
+- 没有 BLOCKERS（空或 "none"）
+- 没有 ISSUES（空或 "none"）
+- 没有 PERFORMANCE_ISSUES（空或 "none"）
+- 没有 MAINTAINABILITY_ISSUES（空或 "none"）
+
+那么你没有任何事要做。只需：
+1. 删除 .task 文件
+2. 确保任务在 TASKS.md 中标记为 `- [x]`
+3. 立即停止 - 不要实现新代码，不要开始新任务
+
+修复阶段**只**修复评审发现的问题。它：
+- 不实现新功能
+- 不开始下一个任务
+- 不做超出修复标记问题以外的任何事情
+
+如果没有问题，你的整个工作是：删除 .task文件，标记任务完成。
+
+## 优先级顺序（仅当存在问题时）
+1. ❌ OUTCOME_ACHIEVED: no - 任务未完成！先修复实现。
+2. 🔧 环境问题 - 创建修复任务
+3. 🔴 BLOCKERS - 必须修复的代码问题（安全/数据/崩溃）
+4. 🟡 ISSUES - 直接修复（功能 bug、逻辑错误）
+5. ⚡ PERFORMANCE_ISSUES - 修复性能问题
+6. 🔧 MAINTAINABILITY_ISSUES - 修复可维护性问题
+7. 🟢 建议 - 直接修复
+
+## 修复原则
+
+### 根因优先（治本而非治标）
+1. 识别问题的根本原因，而不是表面症状
+2. 修复导致问题的代码，而不是绕过它
+3. 验证修复解决了根本原因，而非仅仅让测试通过
+
+### 测试驱动修复
+1. 先写一个失败的测试（如果可能）
+2. 修复代码使测试通过
+3. 运行所有测试确保没有回归
+
+### 回归测试
+修复后必须运行：
+- 相关的单元测试
+- 相关的集成测试
+- 整体测试套件（如果改动影响范围大）
+
+## 如果 OUTCOME_ACHIEVED 是 "no"
+这说明没有完成任务要求。你必须：
+1. 从 .task文件 阅读 EXPECTED_OUTCOME 和 OUTCOME_EVIDENCE
+2. 找出结果未达成的原因（根因分析）
+3. 修复实现直到结果**确实**达成
+4. 在继续之前自己重新验证结果
+
+## 处理开发环境问题（关键！）
+环境问题是可解决的。你必须：
+1. 从 .task 文件阅读 REMEDIATION
+2. 向 TASKS.md 添加新任务以修复环境问题
+   - 将其插入当前任务**之前**（以便下次迭代运行）
+   - 格式：`- [ ] Setup: [修复操作]`
+   - 示例：
+     - `- [ ] Setup: 在 Dockerfile.dev 中安装 Chromium 及依赖项`
+     - `- [ ] Setup: 将缺少的 npm 包 X 添加到依赖项`
+     - `- [ ] Setup: 配置 Docker 以支持工具 Y`
+3. 将当前任务取消标记回 `- [ ]`（环境修复后它会重试）
+4. 删除 .task 文件
+5. 不要标记为阻塞 - 环境任务会修复它
+
+## 代码修复策略
+
+### BLOCKERS（必须修复）
+- 安全漏洞：立即修复，不要绕过
+- 数据丢失风险：立即修复
+- 崩溃问题：定位根因并修复
+
+### ISSUES（应该修复）
+- 功能 bug：修复功能逻辑
+- 逻辑错误：修正条件/流程
+- 缺少错误处理：添加适当处理
+
+### PERFORMANCE_ISSUES（修复性能）
+- 算法优化：选择更高效的算法
+- 减少重复计算：缓存/记忆化
+- 优化查询：添加索引、减少 N+1
+
+### MAINTAINABILITY_ISSUES（改进可维护性）
+- 简化复杂函数：拆分长函数
+- 消除重复代码：提取公共函数
+- 改进命名：使用表达意图的名称
+- 替换魔法数字：使用常量
+
+### 技术债务处理
+如果评审标记了技术债务：
+- 临时代码：实现完整方案或添加 TODO 说明
+- 硬编码配置：移到配置文件或常量
+- 绕过代码：找到根本原因并修复
+
+## 修复后检查清单
+在标记任务完成前，检查：
+
+- [ ] 根因已识别并修复
+- [ ] 相关测试通过
+- [ ] 回归测试通过
+- [ ] 没有引入新的问题
+- [ ] 代码风格符合项目规范
+- [ ] 日志级别适当
+- [ ] 性能问题已解决（如有）
+- [ ] 可维护性已改进（如有）
+
+## 你对代码问题的工作
+1. 修复 BLOCKERS（必须）
+2. 修复 ISSUES（应该修复）
+3. 修复 PERFORMANCE_ISSUES（应该修复）
+4. 修复 MAINTAINABILITY_ISSUES（应该修复）
+5. 考虑建议（最好有）
+6. 重新运行 TEST_COMMAND 确认
+7. 提交修复："fix: [描述]"
+
+**重要：修复所有标记的问题，不仅仅是当前任务的。**
+如果评审标记了预先存在的问题（构建失败、db:push 失败等），
+你**必须**修复它。不要跳过问题，因为"另一个任务导致的"。
+损坏的代码库会阻塞所有未来工作 - 现在修复它。
+
+## 永远不要在测试上作弊
+当测试失败时，你必须修复实现，而不是测试。
+
+**禁止的"修复"实际上是作弊：**
+- Mock 返回值使测试通过
+- 削弱断言（将 `toBe(5)` 改为 `toBeTruthy()`）
+- 删除失败的测试用例
+- 添加 `.skip` 或注释掉失败的测试
+- 将被测试的函数 stub 为返回预期值
+
+**唯一可以更改测试的情况：**
+- 测试本身有 bug（错误的期望值、拼写错误）
+- 上游更改使测试的假设无效（API 更改、架构更改）
+- 并且你验证测试在更改后仍然测试有意义的行为
+
+如果测试失败，测试正在做它的工作 - 它发现了一个 bug。修复 bug。
+因为你自己删除了代码而总是通过的测试套件毫无价值。
+
+## 修复后
+如果所有修复 + 测试通过：
+- 删除 .task 文件
+- 确保任务在 TASKS.md 中标记为 `- [x]`（如果有用则添加备注）
+
+如果发现环境问题：
+- 向 TASKS.md 添加修复任务（见上文）
+- 取消标记当前任务
+- 删除 .task 文件
+- 继续（未阻塞！）
+
+如果真正的代码 BLOCKERS（罕见 - 只有无法修复的安全/数据问题）：
+- 将 TASKS.md 中的任务取消标记回 `- [ ]`
+- 添加阻塞器备注：`- [ ] 任务描述 ⚠️ 被阻塞：[原因]`
+- 保留 .task 文件作为上下文
+FIX_EOF
+
+#==============================================================================
+# VERBOSE OUTPUT RULES - Injected into all prompts to save tokens
+#==============================================================================
+
+# Generate verbose output rules with current temp folder path
+get_verbose_output_rules() {
+    cat << VERBOSE_EOF
+
+## 强制：详细命令输出重定向
+
+**你必须遵循这些规则。无例外。**
+
+**本次会话的日志文件夹**: $BJARNE_TMP_DIR
+
+### 强制重定向 - 你必须重定向这些命令:
+- **包管理器**: npm, yarn, pnpm, pip, pip3, cargo, go get/build, composer, bundle, maven, gradle, apt, brew
+- **构建工具**: webpack, vite, tsc, esbuild, rollup, make, cmake, msbuild, gcc, g++, rustc, javac
+- **容器工具**: docker build, docker pull, docker run, docker-compose
+- **测试运行器**: npm test, yarn test, jest, pytest, cargo test, go test, phpunit, rspec, mocha, vitest
+- **数据库工具**: migrations, db:push, db:pull, prisma, drizzle, typeorm, sequelize
+- **代码检查/格式化**: eslint, prettier, black, flake8, clippy
+
+### 必需模式 - 使用此确切格式:
+\`\`\`bash
+# 正确 - 重定向并显示退出码:
+npm install > $BJARNE_TMP_DIR/install.log 2>&1; echo "Exit code: \$?"
+npm test > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
+npm run build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
+cargo build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
+pytest > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
+
+# 错误 - 绝不要这样做:
+npm install          # 禁止
+npm test             # 禁止
+cargo build          # 禁止
+\`\`\`
+
+### 运行后，使用以下命令检查结果:
+\`\`\`bash
+# 如果退出码为 0，检查最后几行以确认:
+tail -20 $BJARNE_TMP_DIR/test.log
+
+# 如果退出码非 0，查找错误:
+grep -i "error\|fail\|exception" $BJARNE_TMP_DIR/test.log | head -30
+\`\`\`
+
+### 不需要重定向的命令:
+- \`ls\`, \`cat\`, \`head\`, \`tail\`, \`grep\`, \`find\`
+- \`git status\`, \`git diff\`, \`git log\` (短输出)
+- \`node script.js\` (当预期输出 < 10 行时)
+- 文件读取和快速检查
+
+VERBOSE_EOF
+}
+
+#==============================================================================
+# SAFE MODE FUNCTIONS
+#==============================================================================
+
+# Detect if project uses safe mode
+detect_safe_mode() {
+    if [[ -f "$DOCKERFILE" ]]; then
+        # Check if Docker is available
+        if ! command -v docker &>/dev/null; then
+            echo -e "${RED}错误: 安全模式需要 Docker 但未找到${NC}"
+            exit 1
+        fi
+
+        # Check if credentials exist
+        if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
+            echo -e "${RED}错误: 在 ~/.claude/.credentials.json 未找到 Claude 凭证${NC}"
+            echo -e "请先在主机上运行 'claude' 进行认证"
+            exit 1
+        fi
+
+        SAFE_MODE=true
+        # Generate image name from current directory
+        PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+        IMAGE_NAME="bjarne-${PROJECT_NAME}"
+    fi
+}
+
+# Build Docker image if needed
+build_docker_image() {
+    local force_rebuild="$1"
+
+    if [[ "$force_rebuild" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
+        echo -e "${CYAN}正在构建 Docker 镜像: $IMAGE_NAME${NC}"
+        docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" . || {
+            echo -e "${RED}Docker 构建失败${NC}"
+            exit 1
+        }
+        echo -e "${GREEN}镜像构建成功${NC}"
+    else
+        echo -e "${CYAN}使用缓存的镜像: $IMAGE_NAME${NC}"
+    fi
+}
+
+# Get appropriate Docker base image for detected tech stack
+get_base_image() {
+    if [[ -f "package.json" ]]; then
+        echo "node:22-bookworm"
+    elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
+        echo "python:3.12-bookworm"
+    elif [[ -f "Cargo.toml" ]]; then
+        echo "rust:1-bookworm"
+    elif [[ -f "go.mod" ]]; then
+        echo "golang:1.23-bookworm"
+    elif [[ -f "composer.json" ]]; then
+        echo "php:8.4-cli-bookworm"
+    elif [[ -f "pubspec.yaml" ]]; then
+        echo "dart:stable"
+    else
+        # Default to Node as it includes npm for Claude Code
+        echo "node:22-bookworm"
+    fi
+}
+
+# Get volume mount for tech-specific dependencies
+get_dep_volume() {
+    local project_name="$1"
+
+    if [[ -f "package.json" ]]; then
+        echo "${project_name}-node-modules:/workspace/node_modules"
+    elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
+        echo "${project_name}-venv:/workspace/.venv"
+    elif [[ -f "Cargo.toml" ]]; then
+        echo "${project_name}-target:/workspace/target"
+    elif [[ -f "go.mod" ]]; then
+        echo "${project_name}-gopath:/go"
+    elif [[ -f "composer.json" ]]; then
+        echo "${project_name}-vendor:/workspace/vendor"
+    else
+        echo ""
+    fi
+}
+
+# Generate Dockerfile for safe mode
+generate_dockerfile() {
+    local base_image=$(get_base_image)
+
+    mkdir -p "$BJARNE_DIR"
+
+    cat > "$DOCKERFILE" << EOF
+# Auto-generated by bjarne init --safe
+# Modify as needed, then run: bjarne --rebuild
+
+FROM $base_image
+
+# Install Node.js if not present (needed for Claude Code CLI)
+RUN command -v node >/dev/null 2>&1 || { \\
+    apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*; \\
+}
+
+# Install Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Install common dev tools
+RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (Claude Code refuses --dangerously-skip-permissions as root)
+# Make home directory world-writable so any UID can write (container is sandboxed anyway)
+RUN useradd -m -s /bin/bash bjarne && \\
+    mkdir -p /workspace && chown bjarne:bjarne /workspace && \\
+    mkdir -p /home/bjarne/.claude && \\
+    chmod -R 777 /home/bjarne
+USER bjarne
+
+WORKDIR /workspace
+EOF
+
+    echo -e "  - Generated $DOCKERFILE (base: $base_image)"
+}
+
+#==============================================================================
+# GIT/GH DETECTION FUNCTIONS (for task command)
+#==============================================================================
+
+# Detect if git is available and we're in a repo
+detect_git() {
+    if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
+# Detect if gh CLI is available and authenticated
+detect_gh() {
+    if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
+# Generate task ID from description (uses first line only for slug)
+generate_task_id() {
+    local description="$1"
+    local timestamp=$(date +%s)
+    # Use only first non-empty line for slug (handles multi-line markdown)
+    local first_line=$(echo "$description" | grep -v '^#' | grep -v '^$' | head -1)
+    local slug=$(echo "$first_line" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-30)
+    echo "${timestamp}-${slug}"
+}
+
+# Run claude with retry logic (safe mode aware)
+# Usage: run_claude "prompt" "PHASE_NAME"
+run_claude() {
+    local user_prompt="$1"
+    local phase="${2:-UNKNOWN}"
+    local attempt=1
+    local exit_code=0
+    local claude_log_file=""
+    local output=""
+
+    # APPEND verbose output rules to ALL prompts (at end = more prominent)
+    local prompt="$user_prompt
+
+$(get_verbose_output_rules)"
+    local prompt_size=${#prompt}
+
+    log "INFO" "Starting $phase phase (prompt: $prompt_size bytes)"
+
+    while [[ $attempt -le $MAX_RETRIES ]]; do
+        # Generate claude output log file for this attempt
+        local timestamp=$(date '+%Y%m%d_%H%M%S')
+        claude_log_file="$LOG_DIR/claude_${phase,,}_${timestamp}_attempt${attempt}.log"
+
+        # Write log header
+        {
+            echo "=============================================================================="
+            echo "CLAUDE 输出日志 - 实时"
+            echo "=============================================================================="
+            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "Phase: $phase"
+            echo "Attempt: $attempt/$MAX_RETRIES"
+            echo "Prompt Size: $prompt_size bytes"
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "发送的 PROMPT (前 5000 字符):"
+            echo "------------------------------------------------------------------------------"
+            echo "${prompt:0:5000}"
+            if [[ ${#prompt} -gt 5000 ]]; then
+                echo "... (已截断，总共 $prompt_size 字节)"
+            fi
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "CLAUDE 输出 (实时):"
+            echo "------------------------------------------------------------------------------"
+        } > "$claude_log_file"
+
+        # Run claude with tee to output to both screen and file in real-time
+        if [[ "$SAFE_MODE" == true ]]; then
+            # Run in Docker container (as 'bjarne' user, not root)
+            local docker_args="-v $(pwd):/workspace"
+            docker_args+=" -v $HOME/.claude/.credentials.json:/home/bjarne/.claude/.credentials.json:ro"
+
+            # Add gh CLI config if available (for PR creation in task mode)
+            if [[ -d "$HOME/.config/gh" ]]; then
+                docker_args+=" -v $HOME/.config/gh:/home/bjarne/.config/gh:ro"
+            fi
+
+            # Add gitconfig if available (for commits)
+            if [[ -f "$HOME/.gitconfig" ]]; then
+                docker_args+=" -v $HOME/.gitconfig:/home/bjarne/.gitconfig:ro"
+            fi
+
+            # Add dependency volume if applicable
+            local dep_volume=$(get_dep_volume "$PROJECT_NAME")
+            if [[ -n "$dep_volume" ]]; then
+                docker_args+=" -v $dep_volume"
+            fi
+
+            # Mount temp folder for verbose output logs (same path inside container)
+            docker_args+=" -v $BJARNE_TMP_DIR:$BJARNE_TMP_DIR"
+
+            # Run with tee for real-time output to both screen and file
+            docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
+                $docker_args -w /workspace "$IMAGE_NAME" \
+                claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # Get exit code from pipe (use PIPESTATUS)
+            exit_code=${PIPESTATUS[0]}
+        else
+            # Run on host with tee for real-time output
+            claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # Get exit code from pipe
+            exit_code=${PIPESTATUS[0]}
+        fi
+
+        # Write log footer
+        {
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "Exit Code: $exit_code"
+            echo "=============================================================================="
+        } >> "$claude_log_file"
+
+        # Show log file location
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${CYAN}  [日志] $claude_log_file${NC}"
+            log "INFO" "$phase 阶段完成->成功 (日志: $claude_log_file)"
+            return 0
+        fi
+
+        # Check for the specific streaming error
+        output=$(tail -100 "$claude_log_file")
+        if echo "$output" | grep -q "only prompt commands are supported in streaming mode"; then
+            log "ERROR" "$phase: 收到流式模式错误 (第 $attempt 次尝试)"
+            echo -e "${YELLOW}  Claude 失败 (第 $attempt/$MAX_RETRIES 次尝试, 退出码: $exit_code)${NC}"
+            echo -e "${RED}  错误: '仅支持流式模式下的提示命令'${NC}"
+        else
+            echo -e "${YELLOW}  Claude 失败 (第 $attempt/$MAX_RETRIES 次尝试, 退出码: $exit_code)${NC}"
+        fi
+
+        echo -e "${CYAN}  [日志] $claude_log_file${NC}"
+
+        # Log failure details including the actual prompt
+        log_failure "$phase" "$attempt" "$exit_code" "$output" "$prompt_size" "$prompt"
+
+        if [[ $attempt -lt $MAX_RETRIES ]]; then
+            echo -e "${YELLOW}  ${RETRY_DELAY}s 后重试...${NC}"
+            sleep $RETRY_DELAY
+        fi
+
+        ((attempt++))
+    done
+
+    echo -e "${RED}  已达最大重试次数 ($MAX_RETRIES 次)${NC}"
+    log "ERROR" "$phase 阶段在 $MAX_RETRIES 次尝试后失败"
+    echo -e "${YELLOW}  查看详细日志: $LOG_DIR/claude_${phase,,}_*.log${NC}"
+    return 1
+}
+
+#==============================================================================
+# INIT COMMAND - Bootstrap from idea file (works on new or existing projects)
+#==============================================================================
+if [[ "$1" == "init" ]]; then
+    # Parse --safe flag and idea file
+    INIT_SAFE_MODE=false
+    IDEA_FILE=""
+
+    shift  # Remove "init" from args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --safe)
+                INIT_SAFE_MODE=true
+                shift
+                ;;
+            *)
+                IDEA_FILE="$1"
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$IDEA_FILE" ]]; then
+        echo -e "${RED}用法: bjarne init [--safe] <idea.md>${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$IDEA_FILE" ]]; then
+        echo -e "${RED}错误: 未找到 $IDEA_FILE${NC}"
+        exit 1
+    fi
+
+    # Detect if this is an existing project (has source code files)
+    EXISTING_PROJECT="false"
+    SRC_FILES=$(find . -maxdepth 3 -type f \( -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.php" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.tsx" -o -name "*.jsx" \) 2>/dev/null | grep -v node_modules | grep -v vendor | grep -v __pycache__ | head -20)
+    [[ -n "$SRC_FILES" ]] && EXISTING_PROJECT="true"
+
+    if [[ "$EXISTING_PROJECT" == "true" ]]; then
+        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化现有项目${NC}"
+    else
+        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化新项目${NC}"
+    fi
+
+    # Detect existing environment
+    DETECTED=""
+    [[ -f "package.json" ]] && DETECTED="${DETECTED}找到: package.json (Node.js/JavaScript)\n"
+    [[ -f "tsconfig.json" ]] && DETECTED="${DETECTED}找到: tsconfig.json (TypeScript)\n"
+    [[ -f "composer.json" ]] && DETECTED="${DETECTED}找到: composer.json (PHP)\n"
+    [[ -f "requirements.txt" ]] && DETECTED="${DETECTED}找到: requirements.txt (Python)\n"
+    [[ -f "pyproject.toml" ]] && DETECTED="${DETECTED}找到: pyproject.toml (Python)\n"
+    [[ -f "pubspec.yaml" ]] && DETECTED="${DETECTED}找到: pubspec.yaml (Flutter/Dart)\n"
+    [[ -f "Cargo.toml" ]] && DETECTED="${DETECTED}找到: Cargo.toml (Rust)\n"
+    [[ -f "go.mod" ]] && DETECTED="${DETECTED}找到: go.mod (Go)\n"
+    [[ -f "CLAUDE.md" ]] && DETECTED="${DETECTED}找到: CLAUDE.md (现有项目规则)\n"
+    [[ -f ".env.example" ]] && DETECTED="${DETECTED}找到: .env.example (需要 .env 设置)\n"
+    [[ -d "node_modules" ]] || [[ -f "package.json" ]] && [[ ! -d "node_modules" ]] && DETECTED="${DETECTED}注意: 缺少 node_modules - 需要 npm install\n"
+    [[ -d "vendor" ]] || [[ -f "composer.json" ]] && [[ ! -d "vendor" ]] && DETECTED="${DETECTED}注意: 缺少 vendor - 需要 composer install\n"
+
+    # For existing projects, include source file list
+    EXISTING_CODE_INFO=""
+    if [[ "$EXISTING_PROJECT" == "true" ]]; then
+        EXISTING_CODE_INFO="
+## 现有源文件（探索这些以了解已构建的内容）:
+$SRC_FILES
+
+这是一个现有项目。你必须：
+1. 探索并理解现有代码库结构
+2. 阅读关键文件以了解已实现的内容
+3. 在 CONTEXT.md 中记录现有功能
+4. 创建在现有代码基础上构建的任务，而不是重复它
+"
+    fi
+
+    read -r -d '' INIT_PROMPT << 'INIT_EOF' || true
+# 项目初始化（仅规划）
+
+你有一个想法文件（自由内容，任何格式）和你自己检测到的环境信息。
+你的工作：仅创建规划文件（CONTEXT.md, TASKS.md, specs/）。
+
+## 关键：这是规划阶段，不是实现
+- 你创建路线图，使用规划→执行→评审→修复的循环构方式建它
+- 不要编写任何源代码、HTML、CSS、JavaScript、Python 等
+- 不要创建实际的项目文件（index.html、app.py、main.js 等）
+- 仅创建：CONTEXT.md、TASKS.md 和 specs/*.md 文件
+- 你创建的任务将在开发循环(规划→执行→评审→修复)中逐个实现
+
+## 核心原则
+- **尊重想法**：用户的想法是真理来源，不要改变他们的概念
+- **推断合理**：如果未指定，从上下文推断，保留意图
+- **增量交付**：先 MVP，后增强，避免一步到位
+- **依赖清晰**：显式建模任务间的依赖关系
+
+## 阶段 1：需求分析（结构化）
+
+### 1.1 需求提取与分类
+从想法文件中提取并分类：
+
+**功能需求**（系统做什么）：
+- 核心功能：没有它就无法交付的功能
+- 辅助功能：重要但可延后的功能
+- 扩展功能：可选的增强功能
+
+**非功能需求**（系统质量属性）：
+- 性能要求：响应时间、吞吐量、并发能力
+- 安全性要求：认证、授权、数据保护
+- 可用性要求：正常运行时间、错误恢复
+- 可维护性要求：代码质量、文档要求
+- 可扩展性要求：未来增长预期
+
+**约束条件**（限制因素）：
+- 技术约束：必须使用/避免的技术
+- 资源约束：预算、时间、人力限制
+- 环境约束：部署环境、依赖系统
+
+### 1.2 需求一致性检查
+- 是否存在冲突的需求？（如：高性能 vs 低成本）
+- 技术栈是否支持所有非功能需求？
+- 时间/资源是否足够覆盖所有需求？
+
+### 1.3 需求优先级（MoSCoW 方法）
+- **Must have**：MVP 核心功能，没有它无法交付
+- **Should have**：重要但可以短期延后
+- **Could have**：如果有时间就做
+- **Won't have**：明确不在本次范围
+
+### 1.4 现有项目分析
+如果项目已存在，分析：
+- **影响范围**：哪些模块需要修改
+- **依赖关系**：上游/下游依赖
+- **风险点**：可能破坏什么
+- **复用价值**：哪些现有代码可复用
+
+## 阶段 2：可行性与任务分解
+
+### 2.1 可行性分析
+在创建任务前验证：
+
+**技术可行性**：
+- 当前技术栈能否实现所有功能？
+- 是否有技术方案不明确的功能？
+
+**资源可行性**：
+- 时间和人力是否足够？
+- 是否需要外部服务/依赖？
+
+**风险可控性**：
+- 是否有不可接受的风险？
+- 高风险任务是否需要早期验证？
+
+如果发现高风险，在 CONTEXT.md 中记录风险与缓解策略。
+
+### 2.2 任务分解原则
+- **原子性**：每个任务可在一个迭代中独立完成
+- **可验证**：每个任务有机器可检查的结果
+- **依赖清晰**：显式标注依赖关系
+- **粒度适中**：2-4 小时可完成
+
+### 2.3 任务格式（带依赖，推荐）
+
+```markdown
+### 阶段 1：基础设施（无依赖）
+- [ ] Setup: 初始化项目结构 → package.json 和目录结构存在
+- [ ] Setup: 配置测试框架 → npm test 成功运行
+
+### 阶段 2：核心功能（依赖阶段 1）
+- [ ] [依赖: 测试框架] 实现 API 基类 → GET /api/health 返回 200
+- [ ] [依赖: API 基类] 实现用户模型 → User 模型通过验证测试
+
+### 阶段 3：业务逻辑（依赖阶段 2）
+- [ ] [依赖: 用户模型] 实现登录 API → POST /api/login 成功返回 token
+```
+
+### 2.4 任务排序规则
+1. **前置任务优先**：被依赖的任务先完成
+2. **基础设施优先**：框架、工具、配置
+3. **关键路径优先**：MVP 的核心路径
+4. **风险前置**：高风险任务早期验证
+
+### 2.5 MVP 增量策略
+**第一批次：MVP**
+- 仅包含 Must have 功能
+- 验证核心假设
+- 快速获取用户反馈
+
+**第二批次：增强**
+- Should have 功能
+- 性能优化
+- 用户体验改进
+
+**第三批次：扩展**
+- Could have 功能
+- 高级功能
+- 第三方集成
+
+在 TASKS.md 中用里程碑标记：
+
+```markdown
+## 🎯 里程碑 1：MVP
+- [ ] 核心功能 A → 验证方式
+- [ ] 核心功能 B → 验证方式
+
+## 🎯 里程碑 2：Beta
+- [ ] 功能 C → 验证方式
+- [ ] 功能 D → 验证方式
+```
+
+## 阶段 3：创建文件
+
+### 3.1 CONTEXT.md（完整模板）
+```markdown
+# [项目名称]
+
+## 项目概述
+### 愿景
+[用户的愿景 - 保留原话]
+
+### 目标用户
+[谁会使用这个系统]
+
+### 核心价值
+[这个系统解决什么问题]
+
+## 技术栈
+### 前端
+- 框架：[React/Vue/Svelte]
+- 状态管理：[Redux/Pinia/Zustand]
+- 构建工具：[Vite/Webpack]
+
+### 后端
+- 语言/框架：[Node.js/Python/Go]
+- 数据库：[PostgreSQL/MongoDB/MySQL]
+- API 风格：[REST/GraphQL/gRPC]
+
+### 基础设施
+- 部署：[Docker/K8s/Serverless]
+- CI/CD：[GitHub Actions/GitLab CI]
+
+## 架构设计
+### 模块划分
+- **模块 A**：[职责描述]
+  - 依赖：[...]
+  - 接口：[API/函数签名]
+
+- **模块 B**：[职责描述]
+  - 依赖：[...]
+  - 接口：[...]
+
+### 数据流
+[简要描述数据如何在模块间流动]
+
+### 设计模式
+[使用的重要设计模式，如 MVC、DDD、Repository 等]
+
+## 非功能需求
+### 性能
+- API 响应时间：[< 200ms P95]
+- 并发能力：[支持 N+ 并发]
+
+### 安全性
+- 认证：[JWT/OAuth/Session]
+- 数据加密：[TLS/rest/in transit]
+
+### 可维护性
+- 测试覆盖率目标：[> 80%]
+- 代码风格：[ESLint/Prettier/Black]
+
+## 关键决策（ADR 格式）
+### ADR-001: [决策标题]
+- **状态**：已接受
+- **背景**：[为什么需要这个决策]
+- **决策**：[最终选择]
+- **原因**：
+  - [优点1]
+  - [优点2]
+- **后果**：
+  - 正面：[...]
+  - 负面/需处理：[...]
+
+## 风险与挑战
+- **风险**：[描述] → **缓解策略**：[如何应对]
+- **约束**：[描述] → **影响**：[对项目的影响]
+
+## 开发规范
+### 代码风格
+- [Airbnb/Standard/PEP 8]
+
+### Git 工作流
+- 分支策略：[GitFlow/Trunk-Based]
+- Commit 规范：[Conventional Commits]
+
+### 测试策略
+- 单元测试：[Jest/Vitest/pytest]
+- 集成测试：[...]
+- E2E 测试：[Playwright/Cypress]
+
+## 命令/脚本
+- 开发：`npm run dev`
+- 构建：`npm run build`
+- 测试：`npm test`
+- 检查：`npm run lint`
+
+## 参考
+- 详细规范：specs/
+```
+
+### 3.2 TASKS.md（任务清单）
+任务格式：`- [ ] Action → Outcome`
+
+**规则**：
+- 首先设置任务（如果需要）
+- 然后按依赖关系组织功能任务
+- 每个任务有机器可验证的结果
+- 用里程碑标记增量阶段
+
+**示例**：
+```markdown
+## 🎯 里程碑 1：MVP
+
+### 基础设施
+- [ ] 初始化项目结构 → package.json 和目录结构存在
+- [ ] 配置 TypeScript → tsc --noEmit 成功
+
+### 核心功能
+- [ ] [依赖: TypeScript] 实现用户模型 → User 类型定义完整
+- [ ] [依赖: 用户模型] 实现用户注册 API → POST /users 返回 201
+- [ ] [依赖: 用户注册] 实现用户登录 API → POST /login 返回 token
+
+## 🎯 里程碑 2：增强
+- [ ] [依赖: 登录] 添加 JWT 认证中间件 → 认证请求正常处理
+- [ ] [依赖: 认证] 实现权限控制 → 未授权请求返回 401
+```
+
+### 3.3 specs/ 文件夹（仅在需要时）
+- API 项目 → specs/API.md（路由、负载、错误码）
+- UI 项目 → specs/DESIGN_SYSTEM.md（组件规范、设计 tokens）
+- 数据密集型 → specs/DATA_MODEL.md（数据模型、关系）
+- 复杂业务 → specs/BUSINESS_LOGIC.md（业务规则、流程）
+
+不要创建重复想法的规范。
+
+## 阶段 4：验证与优化
+
+### 4.1 任务完整性检查
+- ✅ 所有核心功能都有对应任务
+- ✅ 所有任务都有可验证的结果
+- ✅ 没有循环依赖
+
+### 4.2 依赖关系检查
+- ✅ 依赖关系清晰合理
+- ✅ 无前置依赖的任务在前面
+- ✅ 关键路径优先级高
+
+### 4.3 范围与粒度检查
+- ✅ 任务数量合理（通常 10-30 个）
+- ✅ 每个任务可在 1 个迭代内完成
+- ✅ MVP 路径清晰
+
+### 4.4 验证方式检查
+- ✅ 验证是机器可检查的
+- ✅ 验证方式具体明确
+- ✅ 验证不需要人工判断
+
+如果检查发现问题，回到相应阶段修正。
+
+## 不做什么
+- 不要编写实现代码
+- 不要添加用户未要求的功能
+- 不要创建重复想法的规范
+- 不要超出描述的范围
+- 不要添加"最好有"的任务
+- 不要为手动操作创建任务
+- 不要重新创建现有项目已存在的内容
+INIT_EOF
+
+    IDEA_CONTENT=$(cat "$IDEA_FILE")
+
+    # Read CLAUDE.md if exists
+    CLAUDE_MD=""
+    if [[ -f "CLAUDE.md" ]]; then
+        CLAUDE_MD="
+
+## 现有的 CLAUDE.md (需要遵守的项目规则):
+$(cat CLAUDE.md)
+"
+    fi
+
+    run_claude "# 想法文件内容:
+
+$IDEA_CONTENT
+
+---
+
+## 检测到的环境:
+$DETECTED
+$EXISTING_CODE_INFO
+$CLAUDE_MD
+---
+
+$INIT_PROMPT" "INIT"
+
+    # Verify files were created
+    if [[ -f "$CONTEXT_FILE" ]] && [[ -f "$TASK_FILE" ]]; then
+        echo -e "${GREEN}项目初始化成功!${NC}"
+        echo -e "  - $CONTEXT_FILE"
+        echo -e "  - $TASK_FILE"
+        [[ -d "$SPECS_DIR" ]] && echo -e "  - $SPECS_DIR/"
+
+        # Init git repo if git available and not already in a repo
+        if command -v git &> /dev/null; then
+            if ! git rev-parse --git-dir &> /dev/null 2>&1; then
+                git init -q && \
+                git add -A && \
+                git commit -q -m "Initial project setup by Bjarne" && \
+                echo -e "  - git repo initialized" || true
+            fi
+        fi
+
+        # Generate Docker config if --safe flag was used
+        if [[ "$INIT_SAFE_MODE" == true ]]; then
+            echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
+            generate_dockerfile
+
+            # Add .bjarne to .gitignore if not already there
+            if [[ -f ".gitignore" ]]; then
+                if ! grep -q "^\.bjarne/" ".gitignore" 2>/dev/null; then
+                    echo ".bjarne/" >> ".gitignore"
+                fi
+            else
+                echo ".bjarne/" > ".gitignore"
+            fi
+            echo -e "  - Added .bjarne/ to .gitignore"
+
+            echo ""
+            echo -e "${GREEN}安全模式已启用!${NC}"
+            echo -e "容器将只能访问此项目目录。"
+        fi
+
+        echo ""
+        echo -e "${CYAN}运行 'bjarne' 开始开发${NC}"
+    else
+        echo -e "${RED}初始化不完整 - 请检查上方输出${NC}"
+    fi
+
+    exit 0
+fi
+
+#==============================================================================
+# REBUILD COMMAND - Force rebuild Docker image
+#==============================================================================
+if [[ "$1" == "--rebuild" ]]; then
+    detect_safe_mode
+
+    if [[ "$SAFE_MODE" != true ]]; then
+        echo -e "${RED}错误: 不是安全模式项目 (未找到 $DOCKERFILE)${NC}"
+        echo -e "运行 'bjarne init --safe <idea.md>' 启用安全模式"
+        exit 1
+    fi
+
+    echo -e "${CYAN}正在重新构建 Docker 镜像...${NC}"
+    build_docker_image "true"
+    exit 0
+fi
+
+#==============================================================================
+# REFRESH COMMAND - Add tasks from freeform notes
+#==============================================================================
+if [[ "$1" == "refresh" ]]; then
+    NOTES_FILE="$2"
+
+    if [[ -z "$NOTES_FILE" ]]; then
+        echo -e "${RED}用法: bjarne refresh <notes.md>${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$NOTES_FILE" ]]; then
+        echo -e "${RED}错误: 未找到 $NOTES_FILE${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONTEXT_FILE" ]]; then
+        echo -e "${RED}错误: 未找到 $CONTEXT_FILE - 请先运行 'bjarne init'${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$TASK_FILE" ]]; then
+        echo -e "${RED}错误: 未找到 $TASK_FILE - 请先运行 'bjarne init'${NC}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}Bjarne 正在从 $NOTES_FILE 刷新项目${NC}"
+
+    read -r -d '' REFRESH_PROMPT << 'REFRESH_EOF' || true
+# 项目刷新
+
+你在测试/评审项目后收到了用户的自由格式笔记。
+你的工作：需要时更新 CONTEXT.md 并向 TASKS.md 添加新任务。
+
+## 笔记可能包含
+- 手动测试中的 bug 报告
+- 新功能请求
+- 需要的调整
+- 不符合预期的事情
+- 要添加的新想法
+
+## 你的工作
+1. 仔细阅读笔记文件
+2. 阅读当前的 CONTEXT.md 以了解项目
+3. 阅读当前的 TASKS.md 查看已完成和待处理的内容
+4. 如需要，探索相关代码以了解问题
+
+## 要更新什么
+
+### CONTEXT.md（仅在需要时）
+- 如果笔记改变了方向，添加新的架构决策
+- 仅在范围真正改变时更新"我们在构建什么"
+- 通常你不需要更改 CONTEXT.md
+
+### TASKS.md（主要更新）
+- 保留所有现有任务（已完成和待处理）
+- 根据笔记在底部添加新任务
+- 将相关的新任务分组
+- 每个任务应该是原子的（一个迭代）
+- **格式：`- [ ] 动作 → 结果`**（结果必须可机器验证）
+
+## 任务命名（始终包含 → 结果）
+- Bug 修复：`- [ ] 修复: [bug] → [修复后的预期行为]`
+- 新功能：`- [ ] 添加: [功能] → [如何验证它有效]`
+- 调整：`- [ ] 调整: [更改] → [应该有什么不同]`
+- 重构：`- [ ] 重构: [目标] → [验证行为未改变]`
+
+## 不做什么
+- 不要删除或重新排序现有任务
+- 不要标记任务完成（那是开发循环的工作）
+- 不要扩展超出笔记中的内容
+- 不要重复现有任务
+
+阅读笔记，理解需要什么，更新项目。
+REFRESH_EOF
+
+    NOTES_CONTENT=$(cat "$NOTES_FILE")
+    CONTEXT_CONTENT=$(cat "$CONTEXT_FILE")
+    TASKS_CONTENT=$(cat "$TASK_FILE")
+
+    # Read CLAUDE.md if exists
+    CLAUDE_MD=""
+    if [[ -f "CLAUDE.md" ]]; then
+        CLAUDE_MD="
+## 项目规则 (来自 CLAUDE.md):
+$(cat CLAUDE.md)
+"
+    fi
+
+    run_claude "# 用户的笔记:
+
+$NOTES_CONTENT
+
+---
+
+## 当前的 CONTEXT.md:
+$CONTEXT_CONTENT
+
+---
+
+## 当前的 TASKS.md:
+$TASKS_CONTENT
+
+$CLAUDE_MD
+---
+
+$REFRESH_PROMPT" "REFRESH"
+
+    # Show result
+    NEW_TASKS=$(grep -c '^\s*- \[ \]' "$TASK_FILE" 2>/dev/null || echo "0")
+    echo -e "${GREEN}项目已刷新!${NC}"
+    echo -e "  - $TASK_FILE 中有 $NEW_TASKS 个待处理任务"
+    echo ""
+    echo -e "${CYAN}运行 'bjarne' 来处理新任务${NC}"
+
+    exit 0
+fi
+
+#==============================================================================
+# TASK COMMAND - Isolated single-task mode
+#==============================================================================
+if [[ "$1" == "task" ]]; then
+    shift  # Remove "task" from args
+
+    # Parse task command arguments
+    TASK_SAFE_MODE=false
+    TASK_DESCRIPTION=""
+    TASK_NO_PR=false
+    TASK_NO_WORKTREE=false
+    TASK_MAX_ITERATIONS=25
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --safe)
+                TASK_SAFE_MODE=true
+                shift
+                ;;
+            --no-pr)
+                TASK_NO_PR=true
+                shift
+                ;;
+            --no-worktree)
+                TASK_NO_WORKTREE=true
+                shift
+                ;;
+            -n)
+                TASK_MAX_ITERATIONS="$2"
+                shift 2
+                ;;
+            *)
+                # Assume it's the task description (or file path)
+                TASK_DESCRIPTION="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Auto-detect: if description is an existing file, read it
+    if [[ -n "$TASK_DESCRIPTION" ]] && [[ -f "$TASK_DESCRIPTION" ]]; then
+        TASK_DESCRIPTION=$(cat "$TASK_DESCRIPTION")
+    fi
+
+    if [[ -z "$TASK_DESCRIPTION" ]]; then
+        echo -e "${RED}用法: bjarne task [--safe] [--no-pr] [--no-worktree] [-n iterations] <description or file.md>${NC}"
+        echo ""
+        echo "示例:"
+        echo "  bjarne task \"修复登录按钮无响应的问题\""
+        echo "  bjarne task bugfix.md                      # 读取文件作为任务"
+        echo "  bjarne task --safe \"添加支付集成\""
+        echo "  bjarne task --no-worktree \"快速修复\"     # 在当前分支工作 (会影响其他会话)"
+        exit 1
+    fi
+
+    # Detect git and gh availability
+    HAS_GIT=$(detect_git)
+    HAS_GH=$(detect_gh)
+
+    # Generate task ID and paths (use absolute paths to survive worktree cd)
+    TASK_ID=$(generate_task_id "$TASK_DESCRIPTION")
+    TASK_DIR="$BJARNE_PROJECT_ROOT/.bjarne/tasks/$TASK_ID"
+    TASK_LOG_DIR="$TASK_DIR/logs"
+    TASK_LOG_FILE="$TASK_LOG_DIR/task.log"
+    TASK_SUBTASKS="$TASK_DIR/SUBTASKS.md"
+    TASK_STATE_FILE="$TASK_DIR/.task"
+    TASK_SUMMARY_FILE="$TASK_DIR/summary.md"
+    TASK_ORIGINAL_FILE="$TASK_DIR/TASK.md"
+
+    # Create task directory structure
+    mkdir -p "$TASK_LOG_DIR"
+    echo "$TASK_DESCRIPTION" > "$TASK_ORIGINAL_FILE"
+
+    echo -e "${CYAN}Bjarne 任务模式${NC}"
+    echo -e "  任务 ID: $TASK_ID"
+    echo -e "  任务目录: $TASK_DIR"
+    echo -e "  Git 可用: $([ \"$HAS_GIT\" == \"1\" ] && echo \"是\" || echo \"否\")"
+    echo -e "  GitHub CLI: $([ \"$HAS_GH\" == \"1\" ] && echo \"是\" || echo \"否\")"
+
+    # Task-specific log function
+    task_log() {
+        local level="$1"
+        local msg="$2"
+        local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        echo "[$timestamp] [$level] $msg" >> "$TASK_LOG_FILE"
+    }
+
+    task_log "INFO" "=== Task session started ==="
+    task_log "INFO" "Task: $TASK_DESCRIPTION"
+    task_log "INFO" "Task ID: $TASK_ID"
+
+    # Track original branch if git available
+    ORIGINAL_BRANCH=""
+    ORIGINAL_DIR=$(pwd)
+    WORKTREE_PATH=""
+    WORKTREE_BRANCH=""
+
+    if [[ "$HAS_GIT" == "1" ]]; then
+        ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        task_log "INFO" "Starting branch: $ORIGINAL_BRANCH"
+
+        # Create isolated worktree unless --no-worktree flag is set
+        if [[ "$TASK_NO_WORKTREE" != true ]]; then
+            # Generate branch name from task description using Claude (with fallback)
+            branch_slug=""
+            if command -v claude &>/dev/null; then
+                branch_slug=$(echo "$TASK_DESCRIPTION" | head -100 | claude -p "为这个任务生成一个简洁的 git 分支名。规则：最多40个字符，小写，仅使用连字符，开头结尾没有连字符，描述工作内容。只输出分支名，不要输出其他内容。" 2>/dev/null | tr -d '[:space:]' | head -c 40)
+            fi
+            # Fallback to simple slug if Claude fails or unavailable
+            if [[ -z "$branch_slug" ]]; then
+                first_line=$(echo "$TASK_DESCRIPTION" | grep -v '^#' | grep -v '^>' | grep -v '^$' | head -1)
+                branch_slug=$(echo "$first_line" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-40)
+            fi
+            WORKTREE_BRANCH="feature/${branch_slug}"
+            WORKTREE_PATH="/tmp/bjarne-worktree-$TASK_ID"
+
+            echo -e "${CYAN}正在创建隔离的 worktree...${NC}"
+            task_log "INFO" "Creating worktree at $WORKTREE_PATH on branch $WORKTREE_BRANCH"
+
+            # Create worktree with new branch
+            if ! git worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" 2>/dev/null; then
+                # Branch might already exist, try without -b
+                if ! git worktree add "$WORKTREE_PATH" "$WORKTREE_BRANCH" 2>/dev/null; then
+                    echo -e "${RED}创建 worktree 失败 - 回退到当前分支${NC}"
+                    task_log "WARN" "Worktree creation failed, using current checkout"
+                    WORKTREE_PATH=""
+                    WORKTREE_BRANCH=""
+                fi
+            fi
+
+            if [[ -n "$WORKTREE_PATH" ]] && [[ -d "$WORKTREE_PATH" ]]; then
+                echo -e "${GREEN}在隔离的 worktree 中工作: $WORKTREE_PATH${NC}"
+                echo -e "${GREEN}分支: $WORKTREE_BRANCH${NC}"
+                task_log "INFO" "Worktree created successfully"
+
+                # Change to worktree directory
+                cd "$WORKTREE_PATH"
+
+                # Update task directory paths to be absolute (so they work from worktree)
+                TASK_DIR="$ORIGINAL_DIR/.bjarne/tasks/$TASK_ID"
+                TASK_LOG_DIR="$TASK_DIR/logs"
+                TASK_LOG_FILE="$TASK_LOG_DIR/task.log"
+                TASK_SUBTASKS="$TASK_DIR/SUBTASKS.md"
+                TASK_STATE_FILE="$TASK_DIR/.task"
+                TASK_SUMMARY_FILE="$TASK_DIR/summary.md"
+                TASK_ORIGINAL_FILE="$TASK_DIR/TASK.md"
+            fi
+        fi
+    fi
+
+    # Cleanup function for worktree
+    cleanup_worktree() {
+        if [[ -n "$WORKTREE_PATH" ]] && [[ -d "$WORKTREE_PATH" ]]; then
+            task_log "INFO" "Cleaning up worktree at $WORKTREE_PATH"
+            cd "$ORIGINAL_DIR"
+            git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+        fi
+    }
+
+    # Trap to cleanup on exit/interrupt
+    trap cleanup_worktree EXIT
+
+    # Handle safe mode for task
+    if [[ "$TASK_SAFE_MODE" == true ]]; then
+        if [[ ! -f "$DOCKERFILE" ]]; then
+            echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
+            generate_dockerfile
+        fi
+        SAFE_MODE=true
+        PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+        IMAGE_NAME="bjarne-${PROJECT_NAME}"
+        build_docker_image "false"
+    fi
+
+    echo ""
+
+    # Read project context if available (read-only)
+    PROJECT_CONTEXT=""
+    if [[ -f "$CONTEXT_FILE" ]]; then
+        PROJECT_CONTEXT="## 项目上下文 (来自 CONTEXT.md):
+$(cat "$CONTEXT_FILE")
+
+"
+    fi
+
+    # Read specs if available (read-only)
+    SPECS_CONTENT=""
+    if [[ -d "$SPECS_DIR" ]]; then
+        SPECS_FILES=$(find "$SPECS_DIR" -name "*.md" 2>/dev/null)
+        if [[ -n "$SPECS_FILES" ]]; then
+            SPECS_CONTENT="## 规范说明 (来自 specs/):
+$(cat $SPECS_DIR/*.md 2>/dev/null)
+
+"
+        fi
+    fi
+
+    # Read CLAUDE.md if exists
+    CLAUDE_MD_CONTENT=""
+    if [[ -f "CLAUDE.md" ]]; then
+        CLAUDE_MD_CONTENT="## 项目规则 (来自 CLAUDE.md):
+$(cat CLAUDE.md)
+
+"
+    fi
+
+    #--------------------------------------------------------------------------
+    # DECOMPOSE PHASE - Break task into subtasks
+    #--------------------------------------------------------------------------
+    echo -e "${BLUE}[分解]${NC} 正在分解任务..."
+    task_log "INFO" "[DECOMPOSE] 开始..."
+
+    # Build git workflow instructions based on worktree status
+    if [[ -n "$WORKTREE_PATH" ]]; then
+        GIT_WORKFLOW_INSTRUCTIONS="## Git 工作流
+**你正在分支 $WORKTREE_BRANCH 上的隔离 GIT WORKTREE 中工作**
+- 不要创建分支子任务 - 你已经在功能分支上了
+- 不要运行 git checkout 或 git switch - 保持在当前分支
+- 只在执行阶段提交你的更改
+- PR 创建在最后进行（由 bjarne 处理）
+"
+        GIT_EXAMPLE="- [ ] Add onClick handler to login button → Button calls handleLogin function when clicked"
+    else
+        GIT_WORKFLOW_INSTRUCTIONS="## Git 工作流（如果 git 可用）
+1. **第一个子任务应该创建功能分支**（除非任务另有指定）
+   - 如果提供了任务描述中的分支名称，请使用它
+   - 否则使用描述性名称，如 \`feature/简短描述\` 或 \`fix/简短描述\`
+2. 提交在执行阶段进行
+3. PR 创建在最后进行（由 bjarne 处理）
+
+如果任务描述包含特定的 git 指令（分支名称、工作流程），请遵循它们。
+"
+        GIT_EXAMPLE="- [ ] Create feature branch \`feature/login-fix\` → Branch exists and is checked out
+- [ ] Add onClick handler to login button → Button calls handleLogin function when clicked"
+    fi
+
+    read -r -d '' DECOMPOSE_PROMPT_BASE << 'DECOMPOSE_EOF' || true
+# 分解任务
+
+**重要提示：这是自动化流程的第一步。**
+- 这里没有人工介入 - 你的输出进入任务执行循环
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
+
+你正在为自主编码代理分解任务。
+
+关键：你正在处理现有项目。不要删除任何源文件、
+配置文件或项目文件。仅修改与该任务直接相关的文件。
+项目的现有文件不是 bjarne 产物 - 不要删除它们。
+
+## 说明
+1. 探索代码库以了解相关代码
+2. 将其分解为离散的子任务（如果足够简单则保持为一个）
+3. 每个子任务必须具有：Action → Outcome（可验证）
+4. 仅向 SUBTASKS.md 文件输出 markdown 检查清单
+
+## 子任务格式
+每行必须是：`- [ ] Action → Outcome`
+- Action：要实现什么（具体、原子）
+- Outcome：如何验证它有效（必须可机器检查）
+
+## 输出
+仅将子任务检查清单写入 SUBTASKS.md 文件。没有其他内容。
+保持子任务聚焦、原子和可验证。
+DECOMPOSE_EOF
+
+    DECOMPOSE_FULL_PROMPT="# 要分解的任务:
+$TASK_DESCRIPTION
+
+---
+
+$PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT
+$GIT_WORKFLOW_INSTRUCTIONS
+
+## 示例
+$GIT_EXAMPLE
+- [ ] Test login flow → Clicking login button redirects to /dashboard
+
+---
+
+将子任务写入: $TASK_SUBTASKS
+
+$DECOMPOSE_PROMPT_BASE"
+
+    if ! run_claude "$DECOMPOSE_FULL_PROMPT" "DECOMPOSE"; then
+        echo -e "${RED}分解阶段失败 - 中止${NC}"
+        task_log "ERROR" "[DECOMPOSE] Failed - aborting"
+        # EXIT trap handles worktree cleanup
+        exit 1
+    fi
+
+    # Verify SUBTASKS.md was created
+    if [[ ! -f "$TASK_SUBTASKS" ]]; then
+        echo -e "${RED}错误: 未创建 SUBTASKS.md${NC}"
+        task_log "ERROR" "[DECOMPOSE] No SUBTASKS.md created"
+        # EXIT trap handles worktree cleanup
+        exit 1
+    fi
+
+    SUBTASK_COUNT=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS" 2>/dev/null || echo "0")
+    echo -e "${GREEN}已创建 $SUBTASK_COUNT 个子任务${NC}"
+    task_log "INFO" "[DECOMPOSE] Created $SUBTASK_COUNT subtasks"
+    echo ""
+
+    #--------------------------------------------------------------------------
+    # TASK LOOP - Run until all subtasks complete
+    # Uses main prompts with task-mode context injection
+    #--------------------------------------------------------------------------
+
+    # Build worktree context if in a worktree
+    WORKTREE_CONTEXT=""
+    if [[ -n "$WORKTREE_PATH" ]]; then
+        WORKTREE_CONTEXT="
+**GIT WORKTREE ISOLATION:**
+- You are working in an ISOLATED worktree at: $WORKTREE_PATH
+- Current branch: $WORKTREE_BRANCH
+- Do NOT run \`git checkout\` or \`git switch\` - stay on current branch
+- Just make commits - bjarne handles branch management
+"
+    fi
+
+    # Build task mode context header (injected before each prompt)
+    TASK_MODE_HEADER="## 任务模式 - 隔离修复
+$WORKTREE_CONTEXT
+**文件映射（读取这些而不是默认值）：**
+- TASKS.md → $TASK_SUBTASKS
+- .task → $TASK_STATE_FILE
+
+**任务模式规则：**
+- 你正在修复现有项目中的特定问题
+- 不要删除任何项目源文件 - 只修改需要的内容
+- 如果不存在测试基础设施，不要创建新的
+- 如果测试存在且此更改自然适合，添加/更新测试
+- 如果没有测试，结果验证（grep、curl、文件检查）就足够了
+
+**重要 - 批量处理相关任务：**
+不要只选择第一个未选中的任务，你应该：
+1. 查看子任务文件中的所有未选中任务
+2. 识别相关/耦合任务的逻辑组（例如，一个类中的所有方法、对一个文件的所有更改、所有紧密耦合的更改）
+3. 在一轮迭代中一起规划和执行它们
+4. 这减少了冗余探索并保持相关更改的原子性
+
+写入 .task 文件格式：
+\`\`\`
+TASKS: [列出你正在一起处理的相关任务]
+EXPECTED_OUTCOMES:
+- [任务 1 的预期结果]
+- [任务 2 的预期结果]
+...其余计划格式...
+\`\`\`
+
+**评审阶段**：验证批量任务的所有结果，一起评审所有代码更改。
+**修复阶段**：修复批次中所有更改的问题。
+**完成时**：在子任务文件中用 [x] 标记所有已完成的任务。
+
+"
+
+    echo -e "${CYAN}启动任务循环 - 最多 $TASK_MAX_ITERATIONS 轮${NC}"
+    echo ""
+
+    for i in $(seq 1 $TASK_MAX_ITERATIONS); do
+        # Check for remaining subtasks
+        if ! grep -q '^\s*- \[ \]' "$TASK_SUBTASKS"; then
+            echo -e "${GREEN}所有子任务已完成!${NC}"
+            task_log "INFO" "All subtasks complete"
+            break
+        fi
+
+        REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS") || REMAINING=0
+        echo -e "${YELLOW}=== 任务第 $i/$TASK_MAX_ITERATIONS 轮 (剩余 $REMAINING 个子任务) ===${NC}"
+        task_log "INFO" "=== Iteration $i/$TASK_MAX_ITERATIONS ($REMAINING remaining) ==="
+
+        # Build context for this iteration (task mode header + project context)
+        ITER_CONTEXT="$TASK_MODE_HEADER$PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT"
+
+        # PLAN (uses main PLAN_PROMPT with task context)
+        echo -e "${BLUE}[1/4 规划]${NC} 分析子任务..."
+        task_log "INFO" "[规划] 开始..."
+        if ! run_claude "$ITER_CONTEXT
+
+$PLAN_PROMPT" "TASK_PLAN"; then
+            echo -e "${RED}规划阶段失败 - 中止${NC}"
+            task_log "ERROR" "[规划] 失败 - 中止"
+            break
+        fi
+
+        if [[ ! -f "$TASK_STATE_FILE" ]]; then
+            echo -e "${RED}规划失败 - 未创建 .task 文件${NC}"
+            task_log "ERROR" "[规划] 未创建 .task 文件"
+            continue
+        fi
+
+        # Log which tasks are being worked on
+        CURRENT_TASKS=$(grep -E '^TASK:|^TASKS:' "$TASK_STATE_FILE" 2>/dev/null | head -3)
+        task_log "INFO" "[规划] 工作中: $CURRENT_TASKS"
+
+        # EXECUTE (uses main EXECUTE_PROMPT with task context)
+        echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
+        task_log "INFO" "[执行] 开始..."
+        if ! run_claude "$ITER_CONTEXT
+
+$EXECUTE_PROMPT" "TASK_EXECUTE"; then
+            echo -e "${RED}执行阶段失败 - 中止${NC}"
+            task_log "ERROR" "[执行] 失败 - 中止"
+            break
+        fi
+        task_log "INFO" "[执行] 完成"
+
+        # REVIEW (uses main REVIEW_PROMPT with task context)
+        echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
+        task_log "INFO" "[评审] 开始..."
+        if ! run_claude "$ITER_CONTEXT
+
+$REVIEW_PROMPT" "TASK_REVIEW"; then
+            echo -e "${RED}评审阶段失败 - 中止${NC}"
+            task_log "ERROR" "[评审] 失败 - 中止"
+            break
+        fi
+        task_log "INFO" "[评审] 完成"
+
+        # FIX (uses main FIX_PROMPT with task context)
+        echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
+        task_log "INFO" "[修复] 开始..."
+        if ! run_claude "$ITER_CONTEXT
+
+$FIX_PROMPT" "TASK_FIX"; then
+            echo -e "${RED}修复阶段失败 - 中止${NC}"
+            task_log "ERROR" "[修复] 失败 - 中止"
+            break
+        fi
+        task_log "INFO" "[修复] 完成"
+
+        # Log completed count
+        COMPLETED_NOW=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || COMPLETED_NOW=0
+        task_log "INFO" "第 $i 轮完成 - 目前已完成 $COMPLETED_NOW 个子任务"
+
+        sleep 2
+    done
+
+    #--------------------------------------------------------------------------
+    # FINALIZE - Push, create PR, generate summary (Claude handles git workflow)
+    #--------------------------------------------------------------------------
+    echo ""
+    echo -e "${CYAN}[FINALIZE]${NC} 正在完成任务..."
+    task_log "INFO" "[FINALIZE] 开始..."
+
+    # Build finalize prompt - different based on worktree mode
+    if [[ -n "$WORKTREE_PATH" ]]; then
+        read -r -d '' FINALIZE_PROMPT << FINALIZE_EOF || true
+# 完成任务
+
+**重要提示：这是自动化流程的最后一步。**
+- 这里没有人工介入 - 只需完成收尾工作
+- 不要提问或请求批准 - 只执行步骤
+- 直接、实事求是 - 不需要客套话
+
+**GIT WORKTREE 模式**：你在分支 $WORKTREE_BRANCH 的隔离 worktree 中
+- 不要切换分支 - bjarne 处理清理
+- 只需提交、推送和创建 PR
+
+任务循环已完成。现在完成工作：
+
+## 你的操作
+
+1. **检查 git 状态**
+   - 是否有未提交的更改？如果是，提交它们。
+   - 是否有要推送的提交？
+
+2. **推送分支**
+   - 推送：\`git push -u origin $WORKTREE_BRANCH\`
+   - 如果推送失败（没有远程、身份验证问题），只需记录并继续
+
+3. **适当时创建 PR**
+   - 仅当：推送成功且 \`gh\` CLI 可用时
+   - 检查 PR 是否已存在：\`gh pr list --head $WORKTREE_BRANCH\`
+   - 如果不存在 PR，则创建一个带有良好标题和描述的 PR
+   - 包含更改了什么以及如何测试
+
+4. **输出摘要**
+   - 列出完成的内容
+   - 注意任何问题或未完成的项目
+   - 如果创建了 PR，包含 PR URL
+
+## 约束
+- 不要运行 git checkout 或 git switch - 保持在 $WORKTREE_BRANCH 上
+FINALIZE_EOF
+    else
+        read -r -d '' FINALIZE_PROMPT << 'FINALIZE_EOF' || true
+# 完成任务
+
+**重要提示：这是自动化流程的最后一步。**
+- 这里没有人工介入 - 只需完成收尾工作
+- 不要提问或请求批准 - 只执行步骤
+- 直接、实事求是 - 不需要客套话
+
+任务循环已完成。现在完成工作：
+
+## 你的操作
+
+1. **检查 git 状态**
+   - 你在哪个分支上？
+   - 是否有未提交的更改？如果是，提交它们。
+   - 是否有要推送的提交？
+
+2. **如果在功能分支上则推送**
+   - 如果你创建了功能分支并且有提交，推送它：`git push -u origin <branch>`
+   - 如果推送失败（没有远程、身份验证问题），只需记录并继续
+
+3. **适当时创建 PR**
+   - 仅当：在功能分支上、推送成功、`gh` CLI 可用时
+   - 检查 PR 是否已存在：`gh pr list --head <branch>`
+   - 如果不存在 PR，则创建一个带有良好标题和描述的 PR
+   - 包含更改了什么以及如何测试
+
+4. **返回原始分支**
+   - 切换回起始分支
+
+5. **输出摘要**
+   - 列出完成的内容
+   - 注意任何问题或未完成的项目
+   - 如果创建了 PR，包含 PR URL
+
+## 约束
+FINALIZE_EOF
+    fi
+
+    # Add no-pr constraint if flag set
+    if [[ "$TASK_NO_PR" == true ]]; then
+        FINALIZE_PROMPT+="
+- 不要创建 pull request (设置了 --no-pr 标志)"
+    fi
+
+    # Add context about original branch
+    FINALIZE_PROMPT+="
+- 原始分支是: $ORIGINAL_BRANCH
+- 子任务文件: $TASK_SUBTASKS
+
+## 子任务状态
+$(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
+"
+
+    # Run finalize phase
+    if ! run_claude "$FINALIZE_PROMPT" "FINALIZE"; then
+        echo -e "${YELLOW}完成阶段有问题 - 请检查上方输出${NC}"
+        task_log "WARN" "[FINALIZE] 有问题"
+    else
+        task_log "INFO" "[FINALIZE] 完成"
+    fi
+
+    # Return to original branch (safety fallback in case Claude didn't)
+    # Skip if in worktree - the EXIT trap handles cleanup
+    if [[ "$HAS_GIT" == "1" ]] && [[ -z "$WORKTREE_PATH" ]]; then
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        if [[ "$CURRENT_BRANCH" != "$ORIGINAL_BRANCH" ]]; then
+            git checkout "$ORIGINAL_BRANCH" 2>/dev/null
+        fi
+    fi
+
+    # Log final stats
+    FINAL_COMPLETED=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_COMPLETED=0
+    FINAL_REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_REMAINING=0
+    task_log "INFO" "=== 任务完成: 已完成 $FINAL_COMPLETED 个，剩余 $FINAL_REMAINING 个 ==="
+
+    # Output completion
+    echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}任务完成${NC}"
+    echo -e "${GREEN}========================================${NC}"
+
+    # Cleanup task state directory
+    echo -e "\n${CYAN}正在清理任务状态...${NC}"
+    rm -rf "$TASK_DIR"
+    echo -e "${GREEN}完成${NC}"
+    exit 0
+fi
+
+#==============================================================================
+# MAIN LOOP - PLAN → EXECUTE → REVIEW → FIX
+#==============================================================================
+
+# Parse main loop arguments
+MAX_ITERATIONS=25
+BATCH_MODE=false
+BATCH_SIZE=5
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --batch=*)
+            # --batch=N syntax: batch mode with custom size
+            BATCH_MODE=true
+            BATCH_SIZE="${1#--batch=}"
+            shift
+            ;;
+        --batch)
+            # --batch alone: batch mode with default size
+            BATCH_MODE=true
+            shift
+            ;;
+        -b=*)
+            # -b=N syntax: batch mode with custom size
+            BATCH_MODE=true
+            BATCH_SIZE="${1#-b=}"
+            shift
+            ;;
+        -b[0-9]*)
+            # -bN syntax (no space): batch mode with custom size
+            BATCH_MODE=true
+            BATCH_SIZE="${1#-b}"
+            shift
+            ;;
+        -b)
+            # -b alone: batch mode with default size
+            BATCH_MODE=true
+            shift
+            ;;
+        [0-9]*)
+            MAX_ITERATIONS="$1"
+            shift
+            ;;
+        *)
+            echo -e "${RED}未知选项: $1${NC}"
+            echo "用法: bjarne [options] [iterations]"
+            echo "选项:"
+            echo "  --batch       启用批量模式 (最多 5 个相关任务)"
+            echo "  --batch=N     启用批量模式并指定数量"
+            echo "  -b, -bN       --batch 和 --batch=N 的简写"
+            exit 1
+            ;;
+    esac
+done
+
+# Check required files
+if [[ ! -f "$TASK_FILE" ]]; then
+    echo -e "${RED}错误: 未找到 $TASK_FILE${NC}"
+    echo -e "请先运行 'bjarne init <idea.md>'"
+    exit 1
+fi
+
+if [[ ! -f "$CONTEXT_FILE" ]]; then
+    echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
+fi
+
+# Main mode testing guidance (injected into context)
+MAIN_MODE_HEADER="## 开发模式 - 测试要求
+
+**测试对反馈循环至关重要：**
+- 如果还没有测试 → 标记为 🟡 问题："无测试 - 为此功能添加测试"
+- 如果有测试但未覆盖新代码 → 标记为 🟡 问题："添加测试覆盖"
+- 测试让你验证实现是否有效 - 没有测试你就是在盲操作
+- 没有测试的功能不是真正完成的
+
+"
+
+# Batch mode prompts (override base prompts when batching)
+get_batch_plan_prompt() {
+    local batch_size="$1"
+    cat << BATCH_PLAN_EOF
+# 规划阶段（批处理模式）
+
+**重要提示：这是自动化流程的第1步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出进入下一步
+- 不要提问或请求澄清 - 根据现有信息工作
+- 直接、实事求是 - 不需要客套话
+
+你正在从 TASKS.md 规划最多 $batch_size 个相关任务。
+
+## 你的任务
+1. 阅读 CONTEXT.md 获取项目信息和命令
+2. 阅读 TASKS.md - 扫描所有未选中的 \`- [ ]\` 任务
+3. **识别自然相关的任务** - 寻找：
+   - 涉及相同文件的任务
+   - 属于同一功能/组件的任务
+   - 具有逻辑依赖关系的任务（先 A 后 B）
+   - 共享相同模式/工具的任务
+4. **选择最多 $batch_size 个任务**，它们在一起做有意义
+   - 如果是独立的，可能是 1 个任务
+   - 如果紧密相关，可能是 2-5 个
+   - 不要强制分组 - 只批处理自然属于一起的任务
+5. 阅读 specs/ 文件夹中的详细规范
+6. 搜索代码库中的现有模式、工具、组件
+7. 将计划写入 .task 文件
+
+## 停止：验证任务是否确实未选中
+规划之前，确认每个任务行以 \`- [ ]\` 开头（括号之间有空格）。
+跳过标记为 \`- [x]\` 的任务（已完成）。
+
+## 写入 .task 文件：
+\`\`\`
+TASKS:
+- [TASKS.md 中的确切任务 1 文本]
+- [如果批处理，确切任务 2 文本]
+- [等等]
+
+EXPECTED_OUTCOMES:
+- 任务 1: [如何验证成功 - 来自 → 部分]
+- 任务 2: [任务 2 的验证]
+
+EXISTING_CODE:
+- [可复用的文件/函数]
+
+PATTERNS:
+- [代码库中要遵循的模式]
+
+PLAN:
+1. [具体步骤 - 注明涉及哪些任务]
+2. [具体步骤]
+
+FILES_TO_CREATE: [列表]
+FILES_TO_MODIFY: [列表]
+TEST_COMMAND: [来自 CONTEXT.md 或检测到的命令]
+
+OUTCOME_VERIFICATION:
+- 任务 1: [具体检查，例如 "grep 查找带 href=/login 的按钮"]
+- 任务 2: [任务 2 的验证]
+\`\`\`
+
+## 分组指南
+- **批处理**：一个模型的所有 CRUD 操作、一个页面的所有 UI 组件、相关的 API 端点
+- **不批处理**：无关的功能、代码库不同区域的任务、没有共享上下文的任务
+- **不确定时**：较小的批次也可以。质量胜于数量。
+
+## 架构原则
+- 复用现有代码 - 先搜索
+- 合理时扩展现有文件
+- 每个文件单一明确职责
+- 遵循代码库中的现有模式
+- 匹配现有代码风格
+
+不要实现。只做规划。
+BATCH_PLAN_EOF
+}
+
+get_batch_execute_prompt() {
+    cat << 'BATCH_EXEC_EOF'
+# 执行阶段（批处理模式）
+
+**重要提示：这是自动化流程的第2步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 只需实现计划
+- 不要提问或请求批准 - 执行计划
+- 直接、实事求是 - 不需要客套话
+
+阅读 .task 文件。严格按照计划执行 - 实现所有列出的任务。
+
+**你的主要工作是实现 - 使用 Write 和 Edit 工具创建/修改文件。**
+规划阶段已经研究过代码库。信任计划中的 EXISTING_CODE 和 PATTERNS。
+实现时可以阅读文件，但要优先写代码而不是探索。
+
+## 规则
+- 按顺序执行 PLAN 步骤
+- 实现 TASKS 部分中列出的所有任务
+- 复用 EXISTING_CODE 中列出的代码
+- 遵循 PATTERNS 保持一致性
+- 匹配项目中的现有代码风格
+- 命名清晰，不要缩写
+- 妥善处理错误
+
+## 代码质量（适应项目的技术栈）
+- 保持函数聚焦（单一职责）
+- 保持文件内聚（相关代码放在一起）
+- 注释解释为什么而不是什么
+
+## 完成时
+在 TASKS.md 中标记所有完成的任务，如果学到了有用的东西可以加简短备注：
+- 简单完成：`- [x] 任务描述`
+- 带备注：`- [x] 任务描述 → 备注：[一行见解]`
+
+只有在有助于未来任务时才添加备注（例如"用了 X 而不是 Y"、"需要先完成 Z"）。
+
+然后提交："feat: [所有任务的简要摘要]"
+BATCH_EXEC_EOF
+}
+
+get_batch_review_prompt() {
+    cat << 'BATCH_REVIEW_EOF'
+# 评审阶段（批处理模式）
+
+**重要提示：这是自动化流程的第3步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 你的输出直接进入修复阶段
+- 不要问"你想让我修复这个吗？"这类问题
+- 不要主动提出修改 - 只需记录发现
+- 修复阶段会自动处理你报告的所有内容
+- 直接、实事求是 - 不需要客套话
+
+根据 .task文件 计划评审实现结果 - 验证所有批处理的任务。
+
+## 1. 验证所有结果（最重要！）
+从 .task 文件中阅读 EXPECTED_OUTCOMES 和 OUTCOME_VERIFICATION。
+对于每个列出的任务，实际运行验证步骤：
+- 如果说"按钮存在且 href=/login" → grep/搜索它
+- 如果说"API 返回 200" → curl 端点
+- 如果说"显示错误消息" → 检查组件是否渲染它
+- 如果说"文件创建于 X" → 验证文件存在
+
+**分别跟踪每个任务的结果：**
+- 任务 1: ✅ 达成 / ❌ 未达成
+- 任务 2: ✅ 达成 / ❌ 未达成
+- 等等
+
+**如果任何结果未达成**：这是 🔴 BLOCKERS - 该任务未完成。
+
+## 2. 检查计划符合性
+- 批处理中的所有任务是否都已处理？
+- 是否复用了 EXISTING_CODE？
+- 是否遵循了 PATTERNS？
+- 所有 PLAN 步骤是否完成？
+
+## 自动检测关注领域
+根据实现的内容，检查相关领域：
+
+**如果涉及 auth/passwords/tokens/API keys：**
+- 输入验证和清理
+- 无硬编码密钥
+- 安全的令牌处理
+
+**如果涉及 database/SQL：**
+- 预处理语句（防止 SQL 注入）
+- 正确的错误处理
+
+**如果涉及用户输入/表单：**
+- 输入验证
+- XSS 防护（转义输出）
+
+**如果涉及 API 端点：**
+- 正确的响应格式
+- 错误响应
+- 身份验证检查
+
+**如果涉及 async/state：**
+- 竞态条件检查
+- 错误状态处理
+
+**如果涉及 UI：**
+- 匹配设计系统（如果存在 specs/DESIGN_SYSTEM.md）
+- 可访问性基础
+
+## 运行检查
+使用 .task 文件中的 TEST_COMMAND（或从 CONTEXT.md 检测）
+
+## 按类型和严重程度分类问题
+
+### 问题类型：
+- 🔧 环境：缺少工具、依赖项、容器配置错误、需要配置
+- 💻 代码：bug、逻辑错误、安全问题、缺少错误处理
+
+### 严重程度：
+- 🔴 BLOCKERS：安全漏洞、数据丢失风险、崩溃、结果未达成
+- 🟡 问题：bug、逻辑错误、缺少错误处理
+- 🟢 建议：样式改进、小优化
+
+## 追加到 .task文件：
+```
+REVIEW_RESULT:
+OUTCOMES_ACHIEVED:
+- 任务 1: yes/no - [证据]
+- 任务 2: yes/no - [证据]
+BUILD_PASSED: yes/no
+TESTS_PASSED: yes/no
+
+ENVIRONMENT_ISSUES:
+- [类型] [描述] → REMEDIATION: [如何修复]
+
+BLOCKERS:
+- [如果有 - 包括结果未达成的情况]
+
+ISSUES:
+- [如果有]
+
+SUGGESTIONS:
+- [如果有，简要]
+```
+
+如果一切正常，写入：
+```
+REVIEW_RESULT:
+OUTCOMES_ACHIEVED:
+- 任务 1: yes - [简要证明]
+- 任务 2: yes - [简要证明]
+BUILD_PASSED: yes
+TESTS_PASSED: yes
+ISSUES: none
+```
+BATCH_REVIEW_EOF
+}
+
+get_batch_fix_prompt() {
+    cat << 'BATCH_FIX_EOF'
+# 修复阶段（批处理模式）
+
+**重要提示：这是自动化流程的第4步（共4步：规划 → 执行 → 评审 → 修复）**
+- 这里没有人工介入 - 自动修复评审发现的问题
+- 不要提问或请求批准 - 只修复问题
+- 直接、实事求是 - 不需要客套话
+
+阅读 .task 文件中的 REVIEW_RESULT。按优先级修复问题。
+
+## 没有需要修复的？在这里停止。
+如果评审显示：
+- 所有 OUTCOMES_ACHIEVED: yes
+- 没有 ENVIRONMENT_ISSUES（空或 "none"）
+- 没有 BLOCKERS（空或 "none"）
+- 没有 ISSUES（空或 "none"）
+
+那么你没有任何事要做。只需：
+1. 删除 .task 文件
+2. 确保所有批处理任务在 TASKS.md 中标记为 `- [x]`
+3. 立即停止 - 不要实现新代码，不要开始新任务
+
+修复阶段**只**修复评审发现的问题。它**不**：
+- 实现新功能
+- 开始下一个任务
+- 添加评审未标记的改进
+- 做超出修复标记问题以外的任何事情
+
+如果没有问题，你的整个工作是：删除 .task文件，标记所有完成，完成。
+
+## 优先级顺序（仅当存在问题时）
+1. ❌ 结果未达成 - 任务未完成！先修复实现。
+2. 🔧 环境问题 - 创建修复任务
+3. 🔴 BLOCKERS - 必须修复的代码问题
+4. 🟡 问题 - 如果直接就修复
+5. 🟢 建议 - 仅当琐碎时修复
+
+## 如果任何结果未达成
+实现没有完成任务要求。你必须：
+1. 从 .task文件 阅读 EXPECTED_OUTCOMES 和 OUTCOMES_ACHIEVED
+2. 找出每个失败结果未达成的原因
+3. 修复实现直到**所有**结果都达成
+4. 在继续之前自己重新验证结果
+这不是可选的 - 没有结果的任务未完成。
+
+## 处理环境问题（关键！）
+环境问题是可解决的。你必须：
+1. 从 .task 文件阅读 REMEDIATION
+2. 向 TASKS.md 添加新任务以修复环境问题
+   - 将其插入当前任务**之前**（以便下次迭代运行）
+   - 格式：`- [ ] Setup: [修复操作]`
+3. 将当前任务取消标记回 `- [ ]`（环境修复后它们会重试）
+4. 删除 .task 文件
+5. 不要标记为阻塞 - 环境任务会修复它
+
+## 你对代码问题的工作
+1. 修复BLOCKERS（必须）
+2. 修复问题（应该修复）
+3. 考虑建议（最好有）
+4. 重新运行 TEST_COMMAND 确认
+5. 提交修复："fix: [描述]"
+
+## 永远不要在测试上作弊
+当测试失败时，你必须修复实现，而不是测试。
+
+**禁止的"修复"实际上是作弊：**
+- Mock 返回值使测试通过
+- 削弱断言（将 `toBe(5)` 改为 `toBeTruthy()`）
+- 删除失败的测试用例
+- 添加 `.skip` 或注释掉失败的测试
+- 将被测试的函数 stub 为返回预期值
+
+**唯一可以更改测试的情况：**
+- 测试本身有 bug（错误的期望值、拼写错误）
+- 上游更改使测试的假设无效（API 更改、架构更改）
+- 并且你验证测试在更改后仍然测试有意义的行为
+
+## 修复后
+如果所有修复 + 测试通过：
+- 删除 .task 文件
+- 确保所有批处理任务在 TASKS.md 中标记为 `- [x]`（如果有用则添加备注）
+
+如果发现环境问题：
+- 向 TASKS.md 添加修复任务（见上文）
+- 取消标记当前任务
+- 删除 .task 文件
+- 继续（未阻塞！）
+
+如果真正的代码BLOCKERS（罕见 - 只有无法修复的安全/数据问题）：
+- 将 TASKS.md 中的任务取消标记回 `- [ ]`
+- 添加BLOCKERS备注：`- [ ] 任务描述 ⚠️ 被阻塞：[原因]`
+- 保留 .task 文件作为上下文
+BATCH_FIX_EOF
+}
+
+# Load context fresh each iteration
+load_context() {
+    CONTEXT="$MAIN_MODE_HEADER"
+    if [[ -f "$CONTEXT_FILE" ]]; then
+        CONTEXT+=$(cat "$CONTEXT_FILE")
+    fi
+    # Also include CLAUDE.md if exists (project rules)
+    if [[ -f "CLAUDE.md" ]]; then
+        CONTEXT="$CONTEXT
+
+## 项目规则 (来自 CLAUDE.md):
+$(cat CLAUDE.md)"
+    fi
+}
+
+# Detect and setup safe mode if applicable
+detect_safe_mode
+if [[ "$SAFE_MODE" == true ]]; then
+    echo -e "${CYAN}检测到安全模式 (找到 .bjarne/Dockerfile)${NC}"
+    build_docker_image "false"
+    echo ""
+fi
+
+# Log session start
+log "INFO" "=== Bjarne session started ==="
+log "INFO" "Max iterations: $MAX_ITERATIONS, Safe mode: $SAFE_MODE, Batch mode: $BATCH_MODE (size: $BATCH_SIZE)"
+log "INFO" "Working directory: $(pwd)"
+
+echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
+if [[ "$BATCH_MODE" == true ]]; then
+    echo -e "${CYAN}批量模式: 每轮最多处理 $BATCH_SIZE 个相关任务${NC}"
+fi
+echo -e "${CYAN}循环: 规划 → 执行 → 评审 → 修复${NC}"
+echo -e "${CYAN}日志: $LOG_FILE${NC}"
+echo ""
+
+for i in $(seq 1 $MAX_ITERATIONS); do
+    # Load context fresh each iteration
+    load_context
+
+    # Check for remaining tasks
+    if ! grep -q '^\s*- \[ \]' "$TASK_FILE"; then
+        echo -e "${GREEN}所有任务已完成!${NC}"
+        rm -f "$TASK_STATE"
+        exit 0
+    fi
+
+    REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_FILE" || echo "0")
+    echo -e "${YELLOW}=== 第 $i/$MAX_ITERATIONS 轮 (剩余 $REMAINING 个任务) ===${NC}"
+
+    # Select prompts based on batch mode
+    if [[ "$BATCH_MODE" == true ]]; then
+        ACTIVE_PLAN_PROMPT=$(get_batch_plan_prompt "$BATCH_SIZE")
+        ACTIVE_EXECUTE_PROMPT=$(get_batch_execute_prompt)
+        ACTIVE_REVIEW_PROMPT=$(get_batch_review_prompt)
+        ACTIVE_FIX_PROMPT=$(get_batch_fix_prompt)
+    else
+        ACTIVE_PLAN_PROMPT="$PLAN_PROMPT"
+        ACTIVE_EXECUTE_PROMPT="$EXECUTE_PROMPT"
+        ACTIVE_REVIEW_PROMPT="$REVIEW_PROMPT"
+        ACTIVE_FIX_PROMPT="$FIX_PROMPT"
+    fi
+
+    # PLAN
+    echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
+    if ! run_claude "$CONTEXT
+
+$ACTIVE_PLAN_PROMPT" "PLAN"; then
+        echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$TASK_STATE" ]]; then
+        echo -e "${RED}规划失败 - 未找到 .task 文件${NC}"
+        continue
+    fi
+
+    # EXECUTE
+    echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
+    if ! run_claude "$CONTEXT
+
+$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
+        echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+        exit 1
+    fi
+
+    # REVIEW
+    echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
+    if ! run_claude "$CONTEXT
+
+$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
+        echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+        exit 1
+    fi
+
+    # FIX
+    echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
+    if ! run_claude "$CONTEXT
+
+$ACTIVE_FIX_PROMPT" "FIX"; then
+        echo -e "${RED}修复阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+        exit 1
+    fi
+
+    sleep 2
+done
+
+echo -e "${YELLOW}已达到最大迭代次数${NC}"
