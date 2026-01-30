@@ -63,7 +63,7 @@ BJARNE_CONFIG_DIR="$HOME/.bjarne"
 BJARNE_LAST_UPDATE_CHECK="$BJARNE_CONFIG_DIR/last_update_check"
 BJARNE_UPDATE_DISABLED="$BJARNE_CONFIG_DIR/auto_update_disabled"
 BJARNE_UPDATE_INTERVAL=$((2 * 24 * 60 * 60))  # 2 days in seconds
-BJARNE_REMOTE_URL="https://raw.githubusercontent.com/Dekadinious/bjarne/master/bjarne"
+BJARNE_REMOTE_URL="https://raw.githubusercontent.com/lichengfxf/AutoCode/refs/heads/master/bjarne"
 
 #==============================================================================
 # AUTO-UPDATE FUNCTIONS
@@ -113,27 +113,27 @@ check_for_updates() {
     fi
 
     # Update available - ask user
-    echo -e "${CYAN}A new version of bjarne is available.${NC}"
-    echo -n "Do you want to update? [y/N] "
+    echo -e "${CYAN}bjarne 有新版本可用。${NC}"
+    echo -n "是否更新? [y/N] "
     read -r response
 
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Update skipped.${NC}"
+        echo -e "${YELLOW}已跳过更新。${NC}"
         rm -f "$temp_remote"
         return 0
     fi
 
     # Perform update
-    echo -e "${CYAN}Updating bjarne...${NC}"
+    echo -e "${CYAN}正在更新 bjarne...${NC}"
 
     # Check if we need sudo
     if [[ -w "$script_path" ]]; then
         cp "$temp_remote" "$script_path"
         chmod +x "$script_path"
     else
-        echo -e "${YELLOW}Need elevated permissions to update ${script_path}${NC}"
+        echo -e "${YELLOW}需要提升权限来更新 ${script_path}${NC}"
         if ! sudo cp "$temp_remote" "$script_path"; then
-            echo -e "${RED}Update failed - could not write to ${script_path}${NC}"
+            echo -e "${RED}更新失败 - 无法写入 ${script_path}${NC}"
             rm -f "$temp_remote"
             return 1
         fi
@@ -142,8 +142,8 @@ check_for_updates() {
 
     rm -f "$temp_remote"
 
-    echo -e "${GREEN}bjarne updated successfully!${NC}"
-    echo -e "${YELLOW}Please re-run your command: bjarne $*${NC}"
+    echo -e "${GREEN}bjarne 更新成功!${NC}"
+    echo -e "${YELLOW}请重新运行命令: bjarne $*${NC}"
     exit 0
 }
 
@@ -154,14 +154,14 @@ check_for_updates() {
 if [[ "$1" == "--disable-auto-update" ]]; then
     mkdir -p "$BJARNE_CONFIG_DIR"
     touch "$BJARNE_UPDATE_DISABLED"
-    echo -e "${GREEN}Auto-update disabled.${NC}"
-    echo -e "To re-enable: bjarne --enable-auto-update"
+    echo -e "${GREEN}自动更新已禁用。${NC}"
+    echo -e "要重新启用: bjarne --enable-auto-update"
     exit 0
 fi
 
 if [[ "$1" == "--enable-auto-update" ]]; then
     rm -f "$BJARNE_UPDATE_DISABLED"
-    echo -e "${GREEN}Auto-update enabled.${NC}"
+    echo -e "${GREEN}自动更新已启用。${NC}"
     exit 0
 fi
 
@@ -836,14 +836,14 @@ detect_safe_mode() {
     if [[ -f "$DOCKERFILE" ]]; then
         # Check if Docker is available
         if ! command -v docker &>/dev/null; then
-            echo -e "${RED}Error: Docker required for safe mode but not found${NC}"
+            echo -e "${RED}错误: 安全模式需要 Docker 但未找到${NC}"
             exit 1
         fi
 
         # Check if credentials exist
         if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
-            echo -e "${RED}Error: Claude credentials not found at ~/.claude/.credentials.json${NC}"
-            echo -e "Run 'claude' on the host first to authenticate"
+            echo -e "${RED}错误: 在 ~/.claude/.credentials.json 未找到 Claude 凭证${NC}"
+            echo -e "请先在主机上运行 'claude' 进行认证"
             exit 1
         fi
 
@@ -859,14 +859,14 @@ build_docker_image() {
     local force_rebuild="$1"
 
     if [[ "$force_rebuild" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
-        echo -e "${CYAN}Building Docker image: $IMAGE_NAME${NC}"
+        echo -e "${CYAN}正在构建 Docker 镜像: $IMAGE_NAME${NC}"
         docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" . || {
-            echo -e "${RED}Docker build failed${NC}"
+            echo -e "${RED}Docker 构建失败${NC}"
             exit 1
         }
-        echo -e "${GREEN}Image built successfully${NC}"
+        echo -e "${GREEN}镜像构建成功${NC}"
     else
-        echo -e "${CYAN}Using cached image: $IMAGE_NAME${NC}"
+        echo -e "${CYAN}使用缓存的镜像: $IMAGE_NAME${NC}"
     fi
 }
 
@@ -984,8 +984,9 @@ run_claude() {
     local user_prompt="$1"
     local phase="${2:-UNKNOWN}"
     local attempt=1
-    local exit_code
-    local output
+    local exit_code=0
+    local claude_log_file=""
+    local output=""
 
     # APPEND verbose output rules to ALL prompts (at end = more prominent)
     local prompt="$user_prompt
@@ -996,6 +997,34 @@ $(get_verbose_output_rules)"
     log "INFO" "Starting $phase phase (prompt: $prompt_size bytes)"
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
+        # Generate claude output log file for this attempt
+        local timestamp=$(date '+%Y%m%d_%H%M%S')
+        claude_log_file="$LOG_DIR/claude_${phase,,}_${timestamp}_attempt${attempt}.log"
+
+        # Write log header
+        {
+            echo "=============================================================================="
+            echo "CLAUDE OUTPUT LOG - Real-time"
+            echo "=============================================================================="
+            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "Phase: $phase"
+            echo "Attempt: $attempt/$MAX_RETRIES"
+            echo "Prompt Size: $prompt_size bytes"
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "PROMPT SENT (first 5000 chars):"
+            echo "------------------------------------------------------------------------------"
+            echo "${prompt:0:5000}"
+            if [[ ${#prompt} -gt 5000 ]]; then
+                echo "... (truncated, total $prompt_size bytes)"
+            fi
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "CLAUDE OUTPUT (real-time):"
+            echo "------------------------------------------------------------------------------"
+        } > "$claude_log_file"
+
+        # Run claude with tee to output to both screen and file in real-time
         if [[ "$SAFE_MODE" == true ]]; then
             # Run in Docker container (as 'bjarne' user, not root)
             local docker_args="-v $(pwd):/workspace"
@@ -1020,47 +1049,60 @@ $(get_verbose_output_rules)"
             # Mount temp folder for verbose output logs (same path inside container)
             docker_args+=" -v $BJARNE_TMP_DIR:$BJARNE_TMP_DIR"
 
-            # Capture both stdout and stderr
-            # Run as host user's UID/GID so mounted files have correct permissions
-            output=$(docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
+            # Run with tee for real-time output to both screen and file
+            docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
                 $docker_args -w /workspace "$IMAGE_NAME" \
-                claude -p --dangerously-skip-permissions "$prompt" 2>&1)
-            exit_code=$?
+                claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # Get exit code from pipe (use PIPESTATUS)
+            exit_code=${PIPESTATUS[0]}
         else
-            # Run on host (existing behavior), capture output
-            output=$(claude -p --dangerously-skip-permissions "$prompt" 2>&1)
-            exit_code=$?
+            # Run on host with tee for real-time output
+            claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # Get exit code from pipe
+            exit_code=${PIPESTATUS[0]}
         fi
 
+        # Write log footer
+        {
+            echo ""
+            echo "------------------------------------------------------------------------------"
+            echo "Exit Code: $exit_code"
+            echo "=============================================================================="
+        } >> "$claude_log_file"
+
+        # Show log file location
         if [[ $exit_code -eq 0 ]]; then
-            # Output the result (so it still shows on screen)
-            echo "$output"
-            log "INFO" "$phase phase completed successfully"
+            echo -e "${CYAN}  [日志] $claude_log_file${NC}"
+            log "INFO" "$phase 阶段完成->成功 (日志: $claude_log_file)"
             return 0
         fi
 
         # Check for the specific streaming error
+        output=$(tail -100 "$claude_log_file")
         if echo "$output" | grep -q "only prompt commands are supported in streaming mode"; then
-            log "ERROR" "$phase: Got 'streaming mode' error (attempt $attempt)"
-            echo -e "${YELLOW}  Claude failed (attempt $attempt/$MAX_RETRIES, exit code $exit_code)${NC}"
-            echo -e "${RED}  Error: 'only prompt commands are supported in streaming mode'${NC}"
+            log "ERROR" "$phase: 收到流式模式错误 (第 $attempt 次尝试)"
+            echo -e "${YELLOW}  Claude 失败 (第 $attempt/$MAX_RETRIES 次尝试, 退出码: $exit_code)${NC}"
+            echo -e "${RED}  错误: '仅支持流式模式下的提示命令'${NC}"
         else
-            echo -e "${YELLOW}  Claude failed (attempt $attempt/$MAX_RETRIES, exit code $exit_code)${NC}"
+            echo -e "${YELLOW}  Claude 失败 (第 $attempt/$MAX_RETRIES 次尝试, 退出码: $exit_code)${NC}"
         fi
+
+        echo -e "${CYAN}  [日志] $claude_log_file${NC}"
 
         # Log failure details including the actual prompt
         log_failure "$phase" "$attempt" "$exit_code" "$output" "$prompt_size" "$prompt"
 
         if [[ $attempt -lt $MAX_RETRIES ]]; then
-            echo -e "${YELLOW}  Retrying in ${RETRY_DELAY}s...${NC}"
+            echo -e "${YELLOW}  ${RETRY_DELAY}s 后重试...${NC}"
             sleep $RETRY_DELAY
         fi
 
         ((attempt++))
     done
 
-    echo -e "${RED}  All $MAX_RETRIES attempts failed${NC}"
-    log "ERROR" "$phase phase failed after $MAX_RETRIES attempts"
+    echo -e "${RED}  已达最大重试次数 ($MAX_RETRIES 次)${NC}"
+    log "ERROR" "$phase 阶段在 $MAX_RETRIES 次尝试后失败"
+    echo -e "${YELLOW}  查看详细日志: $LOG_DIR/claude_${phase,,}_*.log${NC}"
     return 1
 }
 
@@ -1087,12 +1129,12 @@ if [[ "$1" == "init" ]]; then
     done
 
     if [[ -z "$IDEA_FILE" ]]; then
-        echo -e "${RED}Usage: bjarne init [--safe] <idea.md>${NC}"
+        echo -e "${RED}用法: bjarne init [--safe] <idea.md>${NC}"
         exit 1
     fi
 
     if [[ ! -f "$IDEA_FILE" ]]; then
-        echo -e "${RED}Error: $IDEA_FILE not found${NC}"
+        echo -e "${RED}错误: 未找到 $IDEA_FILE${NC}"
         exit 1
     fi
 
@@ -1102,9 +1144,9 @@ if [[ "$1" == "init" ]]; then
     [[ -n "$SRC_FILES" ]] && EXISTING_PROJECT="true"
 
     if [[ "$EXISTING_PROJECT" == "true" ]]; then
-        echo -e "${CYAN}Bjarne initializing EXISTING project from: $IDEA_FILE${NC}"
+        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化现有项目${NC}"
     else
-        echo -e "${CYAN}Bjarne initializing NEW project from: $IDEA_FILE${NC}"
+        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化新项目${NC}"
     fi
 
     # Detect existing environment
@@ -1466,7 +1508,7 @@ $INIT_PROMPT" "INIT"
 
     # Verify files were created
     if [[ -f "$CONTEXT_FILE" ]] && [[ -f "$TASK_FILE" ]]; then
-        echo -e "${GREEN}Project initialized!${NC}"
+        echo -e "${GREEN}项目初始化成功!${NC}"
         echo -e "  - $CONTEXT_FILE"
         echo -e "  - $TASK_FILE"
         [[ -d "$SPECS_DIR" ]] && echo -e "  - $SPECS_DIR/"
@@ -1483,7 +1525,7 @@ $INIT_PROMPT" "INIT"
 
         # Generate Docker config if --safe flag was used
         if [[ "$INIT_SAFE_MODE" == true ]]; then
-            echo -e "${CYAN}Generating Docker configuration for safe mode...${NC}"
+            echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
             generate_dockerfile
 
             # Add .bjarne to .gitignore if not already there
@@ -1497,14 +1539,14 @@ $INIT_PROMPT" "INIT"
             echo -e "  - Added .bjarne/ to .gitignore"
 
             echo ""
-            echo -e "${GREEN}Safe mode enabled!${NC}"
-            echo -e "Container will only have access to this project directory."
+            echo -e "${GREEN}安全模式已启用!${NC}"
+            echo -e "容器将只能访问此项目目录。"
         fi
 
         echo ""
-        echo -e "${CYAN}Run 'bjarne' to start development${NC}"
+        echo -e "${CYAN}运行 'bjarne' 开始开发${NC}"
     else
-        echo -e "${RED}Initialization incomplete - check output above${NC}"
+        echo -e "${RED}初始化不完整 - 请检查上方输出${NC}"
     fi
 
     exit 0
@@ -1517,12 +1559,12 @@ if [[ "$1" == "--rebuild" ]]; then
     detect_safe_mode
 
     if [[ "$SAFE_MODE" != true ]]; then
-        echo -e "${RED}Error: Not a safe mode project (no $DOCKERFILE found)${NC}"
-        echo -e "Run 'bjarne init --safe <idea.md>' to enable safe mode"
+        echo -e "${RED}错误: 不是安全模式项目 (未找到 $DOCKERFILE)${NC}"
+        echo -e "运行 'bjarne init --safe <idea.md>' 启用安全模式"
         exit 1
     fi
 
-    echo -e "${CYAN}Rebuilding Docker image...${NC}"
+    echo -e "${CYAN}正在重新构建 Docker 镜像...${NC}"
     build_docker_image "true"
     exit 0
 fi
@@ -1534,26 +1576,26 @@ if [[ "$1" == "refresh" ]]; then
     NOTES_FILE="$2"
 
     if [[ -z "$NOTES_FILE" ]]; then
-        echo -e "${RED}Usage: bjarne refresh <notes.md>${NC}"
+        echo -e "${RED}用法: bjarne refresh <notes.md>${NC}"
         exit 1
     fi
 
     if [[ ! -f "$NOTES_FILE" ]]; then
-        echo -e "${RED}Error: $NOTES_FILE not found${NC}"
+        echo -e "${RED}错误: 未找到 $NOTES_FILE${NC}"
         exit 1
     fi
 
     if [[ ! -f "$CONTEXT_FILE" ]]; then
-        echo -e "${RED}Error: $CONTEXT_FILE not found - run 'bjarne init' first${NC}"
+        echo -e "${RED}错误: 未找到 $CONTEXT_FILE - 请先运行 'bjarne init'${NC}"
         exit 1
     fi
 
     if [[ ! -f "$TASK_FILE" ]]; then
-        echo -e "${RED}Error: $TASK_FILE not found - run 'bjarne init' first${NC}"
+        echo -e "${RED}错误: 未找到 $TASK_FILE - 请先运行 'bjarne init'${NC}"
         exit 1
     fi
 
-    echo -e "${CYAN}Bjarne refreshing project from: $NOTES_FILE${NC}"
+    echo -e "${CYAN}Bjarne 正在从 $NOTES_FILE 刷新项目${NC}"
 
     read -r -d '' REFRESH_PROMPT << 'REFRESH_EOF' || true
 # 项目刷新
@@ -1637,10 +1679,10 @@ $REFRESH_PROMPT" "REFRESH"
 
     # Show result
     NEW_TASKS=$(grep -c '^\s*- \[ \]' "$TASK_FILE" 2>/dev/null || echo "0")
-    echo -e "${GREEN}Project refreshed!${NC}"
-    echo -e "  - $NEW_TASKS pending tasks in $TASK_FILE"
+    echo -e "${GREEN}项目已刷新!${NC}"
+    echo -e "  - $TASK_FILE 中有 $NEW_TASKS 个待处理任务"
     echo ""
-    echo -e "${CYAN}Run 'bjarne' to work through the new tasks${NC}"
+    echo -e "${CYAN}运行 'bjarne' 来处理新任务${NC}"
 
     exit 0
 fi
@@ -1690,13 +1732,13 @@ if [[ "$1" == "task" ]]; then
     fi
 
     if [[ -z "$TASK_DESCRIPTION" ]]; then
-        echo -e "${RED}Usage: bjarne task [--safe] [--no-pr] [--no-worktree] [-n iterations] <description or file.md>${NC}"
+        echo -e "${RED}用法: bjarne task [--safe] [--no-pr] [--no-worktree] [-n iterations] <description or file.md>${NC}"
         echo ""
-        echo "Examples:"
-        echo "  bjarne task \"Fix the login button not responding\""
-        echo "  bjarne task bugfix.md                      # reads file as task"
-        echo "  bjarne task --safe \"Add payment integration\""
-        echo "  bjarne task --no-worktree \"Quick fix\"     # work in current checkout (affects other sessions)"
+        echo "示例:"
+        echo "  bjarne task \"修复登录按钮无响应的问题\""
+        echo "  bjarne task bugfix.md                      # 读取文件作为任务"
+        echo "  bjarne task --safe \"添加支付集成\""
+        echo "  bjarne task --no-worktree \"快速修复\"     # 在当前分支工作 (会影响其他会话)"
         exit 1
     fi
 
@@ -1718,11 +1760,11 @@ if [[ "$1" == "task" ]]; then
     mkdir -p "$TASK_LOG_DIR"
     echo "$TASK_DESCRIPTION" > "$TASK_ORIGINAL_FILE"
 
-    echo -e "${CYAN}Bjarne task mode${NC}"
-    echo -e "  Task ID: $TASK_ID"
-    echo -e "  Task dir: $TASK_DIR"
-    echo -e "  Git available: $([ \"$HAS_GIT\" == \"1\" ] && echo \"yes\" || echo \"no\")"
-    echo -e "  GitHub CLI: $([ \"$HAS_GH\" == \"1\" ] && echo \"yes\" || echo \"no\")"
+    echo -e "${CYAN}Bjarne 任务模式${NC}"
+    echo -e "  任务 ID: $TASK_ID"
+    echo -e "  任务目录: $TASK_DIR"
+    echo -e "  Git 可用: $([ \"$HAS_GIT\" == \"1\" ] && echo \"是\" || echo \"否\")"
+    echo -e "  GitHub CLI: $([ \"$HAS_GH\" == \"1\" ] && echo \"是\" || echo \"否\")"
 
     # Task-specific log function
     task_log() {
@@ -1761,14 +1803,14 @@ if [[ "$1" == "task" ]]; then
             WORKTREE_BRANCH="feature/${branch_slug}"
             WORKTREE_PATH="/tmp/bjarne-worktree-$TASK_ID"
 
-            echo -e "${CYAN}Creating isolated worktree...${NC}"
+            echo -e "${CYAN}正在创建隔离的 worktree...${NC}"
             task_log "INFO" "Creating worktree at $WORKTREE_PATH on branch $WORKTREE_BRANCH"
 
             # Create worktree with new branch
             if ! git worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" 2>/dev/null; then
                 # Branch might already exist, try without -b
                 if ! git worktree add "$WORKTREE_PATH" "$WORKTREE_BRANCH" 2>/dev/null; then
-                    echo -e "${RED}Failed to create worktree - falling back to current checkout${NC}"
+                    echo -e "${RED}创建 worktree 失败 - 回退到当前分支${NC}"
                     task_log "WARN" "Worktree creation failed, using current checkout"
                     WORKTREE_PATH=""
                     WORKTREE_BRANCH=""
@@ -1776,8 +1818,8 @@ if [[ "$1" == "task" ]]; then
             fi
 
             if [[ -n "$WORKTREE_PATH" ]] && [[ -d "$WORKTREE_PATH" ]]; then
-                echo -e "${GREEN}Working in isolated worktree: $WORKTREE_PATH${NC}"
-                echo -e "${GREEN}Branch: $WORKTREE_BRANCH${NC}"
+                echo -e "${GREEN}在隔离的 worktree 中工作: $WORKTREE_PATH${NC}"
+                echo -e "${GREEN}分支: $WORKTREE_BRANCH${NC}"
                 task_log "INFO" "Worktree created successfully"
 
                 # Change to worktree directory
@@ -1810,7 +1852,7 @@ if [[ "$1" == "task" ]]; then
     # Handle safe mode for task
     if [[ "$TASK_SAFE_MODE" == true ]]; then
         if [[ ! -f "$DOCKERFILE" ]]; then
-            echo -e "${CYAN}Generating Docker configuration for safe mode...${NC}"
+            echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
             generate_dockerfile
         fi
         SAFE_MODE=true
@@ -1854,8 +1896,8 @@ $(cat CLAUDE.md)
     #--------------------------------------------------------------------------
     # DECOMPOSE PHASE - Break task into subtasks
     #--------------------------------------------------------------------------
-    echo -e "${BLUE}[DECOMPOSE]${NC} Breaking down task..."
-    task_log "INFO" "[DECOMPOSE] Starting..."
+    echo -e "${BLUE}[分解]${NC} 正在分解任务..."
+    task_log "INFO" "[DECOMPOSE] 开始..."
 
     # Build git workflow instructions based on worktree status
     if [[ -n "$WORKTREE_PATH" ]]; then
@@ -1930,7 +1972,7 @@ Write subtasks to: $TASK_SUBTASKS
 $DECOMPOSE_PROMPT_BASE"
 
     if ! run_claude "$DECOMPOSE_FULL_PROMPT" "DECOMPOSE"; then
-        echo -e "${RED}Decompose phase failed - aborting${NC}"
+        echo -e "${RED}分解阶段失败 - 中止${NC}"
         task_log "ERROR" "[DECOMPOSE] Failed - aborting"
         # EXIT trap handles worktree cleanup
         exit 1
@@ -1938,14 +1980,14 @@ $DECOMPOSE_PROMPT_BASE"
 
     # Verify SUBTASKS.md was created
     if [[ ! -f "$TASK_SUBTASKS" ]]; then
-        echo -e "${RED}Error: SUBTASKS.md not created${NC}"
+        echo -e "${RED}错误: 未创建 SUBTASKS.md${NC}"
         task_log "ERROR" "[DECOMPOSE] No SUBTASKS.md created"
         # EXIT trap handles worktree cleanup
         exit 1
     fi
 
     SUBTASK_COUNT=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS" 2>/dev/null || echo "0")
-    echo -e "${GREEN}Created $SUBTASK_COUNT subtasks${NC}"
+    echo -e "${GREEN}已创建 $SUBTASK_COUNT 个子任务${NC}"
     task_log "INFO" "[DECOMPOSE] Created $SUBTASK_COUNT subtasks"
     echo ""
 
@@ -2002,84 +2044,84 @@ EXPECTED_OUTCOMES:
 
 "
 
-    echo -e "${CYAN}Starting task loop - max $TASK_MAX_ITERATIONS iterations${NC}"
+    echo -e "${CYAN}启动任务循环 - 最多 $TASK_MAX_ITERATIONS 轮${NC}"
     echo ""
 
     for i in $(seq 1 $TASK_MAX_ITERATIONS); do
         # Check for remaining subtasks
         if ! grep -q '^\s*- \[ \]' "$TASK_SUBTASKS"; then
-            echo -e "${GREEN}All subtasks complete!${NC}"
+            echo -e "${GREEN}所有子任务已完成!${NC}"
             task_log "INFO" "All subtasks complete"
             break
         fi
 
         REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS") || REMAINING=0
-        echo -e "${YELLOW}=== Task iteration $i/$TASK_MAX_ITERATIONS ($REMAINING subtasks remaining) ===${NC}"
+        echo -e "${YELLOW}=== 任务第 $i/$TASK_MAX_ITERATIONS 轮 (剩余 $REMAINING 个子任务) ===${NC}"
         task_log "INFO" "=== Iteration $i/$TASK_MAX_ITERATIONS ($REMAINING remaining) ==="
 
         # Build context for this iteration (task mode header + project context)
         ITER_CONTEXT="$TASK_MODE_HEADER$PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT"
 
         # PLAN (uses main PLAN_PROMPT with task context)
-        echo -e "${BLUE}[1/4 PLAN]${NC} Analyzing subtask..."
-        task_log "INFO" "[PLAN] Starting..."
+        echo -e "${BLUE}[1/4 规划]${NC} 分析子任务..."
+        task_log "INFO" "[规划] 开始..."
         if ! run_claude "$ITER_CONTEXT
 
 $PLAN_PROMPT" "TASK_PLAN"; then
-            echo -e "${RED}Plan phase failed - aborting${NC}"
-            task_log "ERROR" "[PLAN] Failed - aborting"
+            echo -e "${RED}规划阶段失败 - 中止${NC}"
+            task_log "ERROR" "[规划] 失败 - 中止"
             break
         fi
 
         if [[ ! -f "$TASK_STATE_FILE" ]]; then
-            echo -e "${RED}Plan failed - no .task file created${NC}"
-            task_log "ERROR" "[PLAN] No .task file created"
+            echo -e "${RED}规划失败 - 未创建 .task 文件${NC}"
+            task_log "ERROR" "[规划] 未创建 .task 文件"
             continue
         fi
 
         # Log which tasks are being worked on
         CURRENT_TASKS=$(grep -E '^TASK:|^TASKS:' "$TASK_STATE_FILE" 2>/dev/null | head -3)
-        task_log "INFO" "[PLAN] Working on: $CURRENT_TASKS"
+        task_log "INFO" "[规划] 工作中: $CURRENT_TASKS"
 
         # EXECUTE (uses main EXECUTE_PROMPT with task context)
-        echo -e "${BLUE}[2/4 EXECUTE]${NC} Implementing..."
-        task_log "INFO" "[EXECUTE] Starting..."
+        echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
+        task_log "INFO" "[执行] 开始..."
         if ! run_claude "$ITER_CONTEXT
 
 $EXECUTE_PROMPT" "TASK_EXECUTE"; then
-            echo -e "${RED}Execute phase failed - aborting${NC}"
-            task_log "ERROR" "[EXECUTE] Failed - aborting"
+            echo -e "${RED}执行阶段失败 - 中止${NC}"
+            task_log "ERROR" "[执行] 失败 - 中止"
             break
         fi
-        task_log "INFO" "[EXECUTE] Complete"
+        task_log "INFO" "[执行] 完成"
 
         # REVIEW (uses main REVIEW_PROMPT with task context)
-        echo -e "${BLUE}[3/4 REVIEW]${NC} Reviewing..."
-        task_log "INFO" "[REVIEW] Starting..."
+        echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
+        task_log "INFO" "[评审] 开始..."
         if ! run_claude "$ITER_CONTEXT
 
 $REVIEW_PROMPT" "TASK_REVIEW"; then
-            echo -e "${RED}Review phase failed - aborting${NC}"
-            task_log "ERROR" "[REVIEW] Failed - aborting"
+            echo -e "${RED}评审阶段失败 - 中止${NC}"
+            task_log "ERROR" "[评审] 失败 - 中止"
             break
         fi
-        task_log "INFO" "[REVIEW] Complete"
+        task_log "INFO" "[评审] 完成"
 
         # FIX (uses main FIX_PROMPT with task context)
-        echo -e "${BLUE}[4/4 FIX]${NC} Fixing..."
-        task_log "INFO" "[FIX] Starting..."
+        echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
+        task_log "INFO" "[修复] 开始..."
         if ! run_claude "$ITER_CONTEXT
 
 $FIX_PROMPT" "TASK_FIX"; then
-            echo -e "${RED}Fix phase failed - aborting${NC}"
-            task_log "ERROR" "[FIX] Failed - aborting"
+            echo -e "${RED}修复阶段失败 - 中止${NC}"
+            task_log "ERROR" "[修复] 失败 - 中止"
             break
         fi
-        task_log "INFO" "[FIX] Complete"
+        task_log "INFO" "[修复] 完成"
 
         # Log completed count
         COMPLETED_NOW=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || COMPLETED_NOW=0
-        task_log "INFO" "Iteration $i complete - $COMPLETED_NOW subtasks done so far"
+        task_log "INFO" "第 $i 轮完成 - 目前已完成 $COMPLETED_NOW 个子任务"
 
         sleep 2
     done
@@ -2088,8 +2130,8 @@ $FIX_PROMPT" "TASK_FIX"; then
     # FINALIZE - Push, create PR, generate summary (Claude handles git workflow)
     #--------------------------------------------------------------------------
     echo ""
-    echo -e "${CYAN}[FINALIZE]${NC} Wrapping up task..."
-    task_log "INFO" "[FINALIZE] Starting..."
+    echo -e "${CYAN}[FINALIZE]${NC} 正在完成任务..."
+    task_log "INFO" "[FINALIZE] 开始..."
 
     # Build finalize prompt - different based on worktree mode
     if [[ -n "$WORKTREE_PATH" ]]; then
@@ -2183,15 +2225,15 @@ FINALIZE_EOF
 - Subtasks file: $TASK_SUBTASKS
 
 ## Subtasks Status
-$(cat "$TASK_SUBTASKS" 2>/dev/null || echo "No subtasks file found")
+$(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
 "
 
     # Run finalize phase
     if ! run_claude "$FINALIZE_PROMPT" "FINALIZE"; then
-        echo -e "${YELLOW}Finalize phase had issues - check output above${NC}"
-        task_log "WARN" "[FINALIZE] Had issues"
+        echo -e "${YELLOW}完成阶段有问题 - 请检查上方输出${NC}"
+        task_log "WARN" "[FINALIZE] 有问题"
     else
-        task_log "INFO" "[FINALIZE] Complete"
+        task_log "INFO" "[FINALIZE] 完成"
     fi
 
     # Return to original branch (safety fallback in case Claude didn't)
@@ -2206,18 +2248,18 @@ $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "No subtasks file found")
     # Log final stats
     FINAL_COMPLETED=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_COMPLETED=0
     FINAL_REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_REMAINING=0
-    task_log "INFO" "=== TASK FINISHED: $FINAL_COMPLETED completed, $FINAL_REMAINING remaining ==="
+    task_log "INFO" "=== 任务完成: 已完成 $FINAL_COMPLETED 个，剩余 $FINAL_REMAINING 个 ==="
 
     # Output completion
     echo ""
     echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}TASK COMPLETE${NC}"
+    echo -e "${GREEN}任务完成${NC}"
     echo -e "${GREEN}========================================${NC}"
 
     # Cleanup task state directory
-    echo -e "\n${CYAN}Cleaning up task state...${NC}"
+    echo -e "\n${CYAN}正在清理任务状态...${NC}"
     rm -rf "$TASK_DIR"
-    echo -e "${GREEN}Done${NC}"
+    echo -e "${GREEN}完成${NC}"
     exit 0
 fi
 
@@ -2265,12 +2307,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
-            echo "Usage: bjarne [options] [iterations]"
-            echo "Options:"
-            echo "  --batch       Enable batch mode (up to 5 related tasks)"
-            echo "  --batch=N     Enable batch mode with custom size"
-            echo "  -b, -bN       Short form of --batch, --batch=N"
+            echo -e "${RED}未知选项: $1${NC}"
+            echo "用法: bjarne [options] [iterations]"
+            echo "选项:"
+            echo "  --batch       启用批量模式 (最多 5 个相关任务)"
+            echo "  --batch=N     启用批量模式并指定数量"
+            echo "  -b, -bN       --batch 和 --batch=N 的简写"
             exit 1
             ;;
     esac
@@ -2278,13 +2320,13 @@ done
 
 # Check required files
 if [[ ! -f "$TASK_FILE" ]]; then
-    echo -e "${RED}Error: $TASK_FILE not found${NC}"
-    echo -e "Run 'bjarne init <idea.md>' first"
+    echo -e "${RED}错误: 未找到 $TASK_FILE${NC}"
+    echo -e "请先运行 'bjarne init <idea.md>'"
     exit 1
 fi
 
 if [[ ! -f "$CONTEXT_FILE" ]]; then
-    echo -e "${YELLOW}Warning: $CONTEXT_FILE not found${NC}"
+    echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
 fi
 
 # Main mode testing guidance (injected into context)
@@ -2643,7 +2685,7 @@ $(cat CLAUDE.md)"
 # Detect and setup safe mode if applicable
 detect_safe_mode
 if [[ "$SAFE_MODE" == true ]]; then
-    echo -e "${CYAN}Safe mode detected (.bjarne/Dockerfile found)${NC}"
+    echo -e "${CYAN}检测到安全模式 (找到 .bjarne/Dockerfile)${NC}"
     build_docker_image "false"
     echo ""
 fi
@@ -2653,12 +2695,12 @@ log "INFO" "=== Bjarne session started ==="
 log "INFO" "Max iterations: $MAX_ITERATIONS, Safe mode: $SAFE_MODE, Batch mode: $BATCH_MODE (size: $BATCH_SIZE)"
 log "INFO" "Working directory: $(pwd)"
 
-echo -e "${CYAN}Bjarne starting - max $MAX_ITERATIONS iterations${NC}"
+echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
 if [[ "$BATCH_MODE" == true ]]; then
-    echo -e "${CYAN}Batch mode: up to $BATCH_SIZE related tasks per iteration${NC}"
+    echo -e "${CYAN}批量模式: 每轮最多处理 $BATCH_SIZE 个相关任务${NC}"
 fi
-echo -e "${CYAN}Loop: PLAN → EXECUTE → REVIEW → FIX${NC}"
-echo -e "${CYAN}Logs: $LOG_FILE${NC}"
+echo -e "${CYAN}循环: 规划 → 执行 → 评审 → 修复${NC}"
+echo -e "${CYAN}日志: $LOG_FILE${NC}"
 echo ""
 
 for i in $(seq 1 $MAX_ITERATIONS); do
@@ -2667,13 +2709,13 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # Check for remaining tasks
     if ! grep -q '^\s*- \[ \]' "$TASK_FILE"; then
-        echo -e "${GREEN}All tasks complete!${NC}"
+        echo -e "${GREEN}所有任务已完成!${NC}"
         rm -f "$TASK_STATE"
         exit 0
     fi
 
     REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_FILE" || echo "0")
-    echo -e "${YELLOW}=== Iteration $i/$MAX_ITERATIONS ($REMAINING tasks remaining) ===${NC}"
+    echo -e "${YELLOW}=== 第 $i/$MAX_ITERATIONS 轮 (剩余 $REMAINING 个任务) ===${NC}"
 
     # Select prompts based on batch mode
     if [[ "$BATCH_MODE" == true ]]; then
@@ -2689,47 +2731,47 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     fi
 
     # PLAN
-    echo -e "${BLUE}[1/4 PLAN]${NC} Analyzing..."
+    echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
     if ! run_claude "$CONTEXT
 
 $ACTIVE_PLAN_PROMPT" "PLAN"; then
-        echo -e "${RED}Plan phase failed after $MAX_RETRIES retries - aborting${NC}"
+        echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     if [[ ! -f "$TASK_STATE" ]]; then
-        echo -e "${RED}Plan failed - no .task file${NC}"
+        echo -e "${RED}规划失败 - 未找到 .task 文件${NC}"
         continue
     fi
 
     # EXECUTE
-    echo -e "${BLUE}[2/4 EXECUTE]${NC} Implementing..."
+    echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
     if ! run_claude "$CONTEXT
 
 $ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
-        echo -e "${RED}Execute phase failed after $MAX_RETRIES retries - aborting${NC}"
+        echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     # REVIEW
-    echo -e "${BLUE}[3/4 REVIEW]${NC} Reviewing..."
+    echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
     if ! run_claude "$CONTEXT
 
 $ACTIVE_REVIEW_PROMPT" "REVIEW"; then
-        echo -e "${RED}Review phase failed after $MAX_RETRIES retries - aborting${NC}"
+        echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     # FIX
-    echo -e "${BLUE}[4/4 FIX]${NC} Fixing..."
+    echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
     if ! run_claude "$CONTEXT
 
 $ACTIVE_FIX_PROMPT" "FIX"; then
-        echo -e "${RED}Fix phase failed after $MAX_RETRIES retries - aborting${NC}"
+        echo -e "${RED}修复阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     sleep 2
 done
 
-echo -e "${YELLOW}Max iterations reached${NC}"
+echo -e "${YELLOW}已达到最大迭代次数${NC}"
