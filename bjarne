@@ -1151,31 +1151,31 @@ if [[ "$1" == "init" ]]; then
 
     # Detect existing environment
     DETECTED=""
-    [[ -f "package.json" ]] && DETECTED="${DETECTED}Found: package.json (Node.js/JavaScript)\n"
-    [[ -f "tsconfig.json" ]] && DETECTED="${DETECTED}Found: tsconfig.json (TypeScript)\n"
-    [[ -f "composer.json" ]] && DETECTED="${DETECTED}Found: composer.json (PHP)\n"
-    [[ -f "requirements.txt" ]] && DETECTED="${DETECTED}Found: requirements.txt (Python)\n"
-    [[ -f "pyproject.toml" ]] && DETECTED="${DETECTED}Found: pyproject.toml (Python)\n"
-    [[ -f "pubspec.yaml" ]] && DETECTED="${DETECTED}Found: pubspec.yaml (Flutter/Dart)\n"
-    [[ -f "Cargo.toml" ]] && DETECTED="${DETECTED}Found: Cargo.toml (Rust)\n"
-    [[ -f "go.mod" ]] && DETECTED="${DETECTED}Found: go.mod (Go)\n"
-    [[ -f "CLAUDE.md" ]] && DETECTED="${DETECTED}Found: CLAUDE.md (existing project rules)\n"
-    [[ -f ".env.example" ]] && DETECTED="${DETECTED}Found: .env.example (needs .env setup)\n"
-    [[ -d "node_modules" ]] || [[ -f "package.json" ]] && [[ ! -d "node_modules" ]] && DETECTED="${DETECTED}Note: node_modules missing - needs npm install\n"
-    [[ -d "vendor" ]] || [[ -f "composer.json" ]] && [[ ! -d "vendor" ]] && DETECTED="${DETECTED}Note: vendor missing - needs composer install\n"
+    [[ -f "package.json" ]] && DETECTED="${DETECTED}找到: package.json (Node.js/JavaScript)\n"
+    [[ -f "tsconfig.json" ]] && DETECTED="${DETECTED}找到: tsconfig.json (TypeScript)\n"
+    [[ -f "composer.json" ]] && DETECTED="${DETECTED}找到: composer.json (PHP)\n"
+    [[ -f "requirements.txt" ]] && DETECTED="${DETECTED}找到: requirements.txt (Python)\n"
+    [[ -f "pyproject.toml" ]] && DETECTED="${DETECTED}找到: pyproject.toml (Python)\n"
+    [[ -f "pubspec.yaml" ]] && DETECTED="${DETECTED}找到: pubspec.yaml (Flutter/Dart)\n"
+    [[ -f "Cargo.toml" ]] && DETECTED="${DETECTED}找到: Cargo.toml (Rust)\n"
+    [[ -f "go.mod" ]] && DETECTED="${DETECTED}找到: go.mod (Go)\n"
+    [[ -f "CLAUDE.md" ]] && DETECTED="${DETECTED}找到: CLAUDE.md (现有项目规则)\n"
+    [[ -f ".env.example" ]] && DETECTED="${DETECTED}找到: .env.example (需要 .env 设置)\n"
+    [[ -d "node_modules" ]] || [[ -f "package.json" ]] && [[ ! -d "node_modules" ]] && DETECTED="${DETECTED}注意: 缺少 node_modules - 需要 npm install\n"
+    [[ -d "vendor" ]] || [[ -f "composer.json" ]] && [[ ! -d "vendor" ]] && DETECTED="${DETECTED}注意: 缺少 vendor - 需要 composer install\n"
 
     # For existing projects, include source file list
     EXISTING_CODE_INFO=""
     if [[ "$EXISTING_PROJECT" == "true" ]]; then
         EXISTING_CODE_INFO="
-## EXISTING SOURCE FILES (explore these to understand what's built):
+## 现有源文件（探索这些以了解已构建的内容）:
 $SRC_FILES
 
-This is an EXISTING project. You MUST:
-1. Explore and understand the existing codebase structure
-2. Read key files to understand what's already implemented
-3. Document existing functionality in CONTEXT.md
-4. Create tasks that BUILD ON existing code, not duplicate it
+这是一个现有项目。你必须：
+1. 探索并理解现有代码库结构
+2. 阅读关键文件以了解已实现的内容
+3. 在 CONTEXT.md 中记录现有功能
+4. 创建在现有代码基础上构建的任务，而不是重复它
 "
     fi
 
@@ -1487,18 +1487,18 @@ INIT_EOF
     if [[ -f "CLAUDE.md" ]]; then
         CLAUDE_MD="
 
-## Existing CLAUDE.md (project rules to respect):
+## 现有的 CLAUDE.md (需要遵守的项目规则):
 $(cat CLAUDE.md)
 "
     fi
 
-    run_claude "# IDEA FILE CONTENT:
+    run_claude "# 想法文件内容:
 
 $IDEA_CONTENT
 
 ---
 
-## DETECTED ENVIRONMENT:
+## 检测到的环境:
 $DETECTED
 $EXISTING_CODE_INFO
 $CLAUDE_MD
@@ -1653,23 +1653,23 @@ REFRESH_EOF
     CLAUDE_MD=""
     if [[ -f "CLAUDE.md" ]]; then
         CLAUDE_MD="
-## Project Rules (from CLAUDE.md):
+## 项目规则 (来自 CLAUDE.md):
 $(cat CLAUDE.md)
 "
     fi
 
-    run_claude "# USER'S NOTES:
+    run_claude "# 用户的笔记:
 
 $NOTES_CONTENT
 
 ---
 
-## CURRENT CONTEXT.md:
+## 当前的 CONTEXT.md:
 $CONTEXT_CONTENT
 
 ---
 
-## CURRENT TASKS.md:
+## 当前的 TASKS.md:
 $TASKS_CONTENT
 
 $CLAUDE_MD
@@ -1793,7 +1793,7 @@ if [[ "$1" == "task" ]]; then
             # Generate branch name from task description using Claude (with fallback)
             branch_slug=""
             if command -v claude &>/dev/null; then
-                branch_slug=$(echo "$TASK_DESCRIPTION" | head -100 | claude -p "Generate a concise git branch name for this task. Rules: max 40 chars, lowercase, hyphens only, no leading/trailing hyphens, descriptive of the work. Output ONLY the branch name, nothing else." 2>/dev/null | tr -d '[:space:]' | head -c 40)
+                branch_slug=$(echo "$TASK_DESCRIPTION" | head -100 | claude -p "为这个任务生成一个简洁的 git 分支名。规则：最多40个字符，小写，仅使用连字符，开头结尾没有连字符，描述工作内容。只输出分支名，不要输出其他内容。" 2>/dev/null | tr -d '[:space:]' | head -c 40)
             fi
             # Fallback to simple slug if Claude fails or unavailable
             if [[ -z "$branch_slug" ]]; then
@@ -1866,7 +1866,7 @@ if [[ "$1" == "task" ]]; then
     # Read project context if available (read-only)
     PROJECT_CONTEXT=""
     if [[ -f "$CONTEXT_FILE" ]]; then
-        PROJECT_CONTEXT="## PROJECT CONTEXT (from CONTEXT.md):
+        PROJECT_CONTEXT="## 项目上下文 (来自 CONTEXT.md):
 $(cat "$CONTEXT_FILE")
 
 "
@@ -1877,7 +1877,7 @@ $(cat "$CONTEXT_FILE")
     if [[ -d "$SPECS_DIR" ]]; then
         SPECS_FILES=$(find "$SPECS_DIR" -name "*.md" 2>/dev/null)
         if [[ -n "$SPECS_FILES" ]]; then
-            SPECS_CONTENT="## SPECIFICATIONS (from specs/):
+            SPECS_CONTENT="## 规范说明 (来自 specs/):
 $(cat $SPECS_DIR/*.md 2>/dev/null)
 
 "
@@ -1887,7 +1887,7 @@ $(cat $SPECS_DIR/*.md 2>/dev/null)
     # Read CLAUDE.md if exists
     CLAUDE_MD_CONTENT=""
     if [[ -f "CLAUDE.md" ]]; then
-        CLAUDE_MD_CONTENT="## Project Rules (from CLAUDE.md):
+        CLAUDE_MD_CONTENT="## 项目规则 (来自 CLAUDE.md):
 $(cat CLAUDE.md)
 
 "
@@ -1901,23 +1901,23 @@ $(cat CLAUDE.md)
 
     # Build git workflow instructions based on worktree status
     if [[ -n "$WORKTREE_PATH" ]]; then
-        GIT_WORKFLOW_INSTRUCTIONS="## Git Workflow
-**You are working in an ISOLATED GIT WORKTREE on branch: $WORKTREE_BRANCH**
-- Do NOT create a branch subtask - you're already on the feature branch
-- Do NOT run git checkout or git switch - stay on current branch
-- Just commit your changes during EXECUTE phase
-- PR creation happens at the end (handled by bjarne)
+        GIT_WORKFLOW_INSTRUCTIONS="## Git 工作流
+**你正在分支 $WORKTREE_BRANCH 上的隔离 GIT WORKTREE 中工作**
+- 不要创建分支子任务 - 你已经在功能分支上了
+- 不要运行 git checkout 或 git switch - 保持在当前分支
+- 只在执行阶段提交你的更改
+- PR 创建在最后进行（由 bjarne 处理）
 "
         GIT_EXAMPLE="- [ ] Add onClick handler to login button → Button calls handleLogin function when clicked"
     else
-        GIT_WORKFLOW_INSTRUCTIONS="## Git Workflow (if git available)
-1. **First subtask should create a feature branch** (unless task specifies otherwise)
-   - Use branch name from task description if provided
-   - Otherwise use a descriptive name like \`feature/short-description\` or \`fix/short-description\`
-2. Commits happen during EXECUTE phase
-3. PR creation happens at the end (handled by bjarne)
+        GIT_WORKFLOW_INSTRUCTIONS="## Git 工作流（如果 git 可用）
+1. **第一个子任务应该创建功能分支**（除非任务另有指定）
+   - 如果提供了任务描述中的分支名称，请使用它
+   - 否则使用描述性名称，如 \`feature/简短描述\` 或 \`fix/简短描述\`
+2. 提交在执行阶段进行
+3. PR 创建在最后进行（由 bjarne 处理）
 
-If the task description includes specific git instructions (branch name, workflow), follow those.
+如果任务描述包含特定的 git 指令（分支名称、工作流程），请遵循它们。
 "
         GIT_EXAMPLE="- [ ] Create feature branch \`feature/login-fix\` → Branch exists and is checked out
 - [ ] Add onClick handler to login button → Button calls handleLogin function when clicked"
@@ -1953,7 +1953,7 @@ If the task description includes specific git instructions (branch name, workflo
 保持子任务聚焦、原子和可验证。
 DECOMPOSE_EOF
 
-    DECOMPOSE_FULL_PROMPT="# TASK TO DECOMPOSE:
+    DECOMPOSE_FULL_PROMPT="# 要分解的任务:
 $TASK_DESCRIPTION
 
 ---
@@ -1961,13 +1961,13 @@ $TASK_DESCRIPTION
 $PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT
 $GIT_WORKFLOW_INSTRUCTIONS
 
-## Examples
+## 示例
 $GIT_EXAMPLE
 - [ ] Test login flow → Clicking login button redirects to /dashboard
 
 ---
 
-Write subtasks to: $TASK_SUBTASKS
+将子任务写入: $TASK_SUBTASKS
 
 $DECOMPOSE_PROMPT_BASE"
 
@@ -2009,38 +2009,38 @@ $DECOMPOSE_PROMPT_BASE"
     fi
 
     # Build task mode context header (injected before each prompt)
-    TASK_MODE_HEADER="## TASK MODE - Isolated Fix
+    TASK_MODE_HEADER="## 任务模式 - 隔离修复
 $WORKTREE_CONTEXT
-**File Mappings (read these instead of defaults):**
+**文件映射（读取这些而不是默认值）：**
 - TASKS.md → $TASK_SUBTASKS
 - .task → $TASK_STATE_FILE
 
-**Task Mode Rules:**
-- You are fixing a specific thing in an EXISTING project
-- Do NOT delete any project source files - only modify what's needed
-- Do NOT create new test infrastructure if none exists
-- If tests exist and this change naturally fits, add/update tests
-- If no tests exist, outcome verification (grep, curl, file check) is sufficient
+**任务模式规则：**
+- 你正在修复现有项目中的特定问题
+- 不要删除任何项目源文件 - 只修改需要的内容
+- 如果不存在测试基础设施，不要创建新的
+- 如果测试存在且此更改自然适合，添加/更新测试
+- 如果没有测试，结果验证（grep、curl、文件检查）就足够了
 
-**IMPORTANT - Batch Related Tasks:**
-Instead of picking only the FIRST unchecked task, you should:
-1. Look at ALL unchecked tasks in the subtasks file
-2. Identify a logical GROUP of related/coupled tasks (e.g., all methods in one class, all changes to one file, all tightly coupled changes)
-3. Plan and execute them TOGETHER in one iteration
-4. This reduces redundant exploration and keeps related changes atomic
+**重要 - 批量处理相关任务：**
+不要只选择第一个未选中的任务，你应该：
+1. 查看子任务文件中的所有未选中任务
+2. 识别相关/耦合任务的逻辑组（例如，一个类中的所有方法、对一个文件的所有更改、所有紧密耦合的更改）
+3. 在一轮迭代中一起规划和执行它们
+4. 这减少了冗余探索并保持相关更改的原子性
 
-Write to .task file with format:
+写入 .task 文件格式：
 \`\`\`
-TASKS: [list the related tasks you're tackling together]
+TASKS: [列出你正在一起处理的相关任务]
 EXPECTED_OUTCOMES:
-- [outcome for task 1]
-- [outcome for task 2]
-...rest of plan format...
+- [任务 1 的预期结果]
+- [任务 2 的预期结果]
+...其余计划格式...
 \`\`\`
 
-**REVIEW phase**: Verify ALL outcomes for the batched tasks, review ALL code changes together.
-**FIX phase**: Fix issues across ALL changes from the batch.
-**When done**: Mark ALL completed tasks with [x] in the subtasks file.
+**评审阶段**：验证批量任务的所有结果，一起评审所有代码更改。
+**修复阶段**：修复批次中所有更改的问题。
+**完成时**：在子任务文件中用 [x] 标记所有已完成的任务。
 
 "
 
@@ -2216,15 +2216,15 @@ FINALIZE_EOF
     # Add no-pr constraint if flag set
     if [[ "$TASK_NO_PR" == true ]]; then
         FINALIZE_PROMPT+="
-- Do NOT create a pull request (--no-pr flag was set)"
+- 不要创建 pull request (设置了 --no-pr 标志)"
     fi
 
     # Add context about original branch
     FINALIZE_PROMPT+="
-- Original branch was: $ORIGINAL_BRANCH
-- Subtasks file: $TASK_SUBTASKS
+- 原始分支是: $ORIGINAL_BRANCH
+- 子任务文件: $TASK_SUBTASKS
 
-## Subtasks Status
+## 子任务状态
 $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
 "
 
@@ -2330,13 +2330,13 @@ if [[ ! -f "$CONTEXT_FILE" ]]; then
 fi
 
 # Main mode testing guidance (injected into context)
-MAIN_MODE_HEADER="## DEVELOPMENT MODE - Testing Requirements
+MAIN_MODE_HEADER="## 开发模式 - 测试要求
 
-**Testing is CRITICAL for the feedback loop:**
-- If no tests exist yet → flag as 🟡 ISSUE: \"No tests - add test for this feature\"
-- If tests exist but don't cover new code → flag as 🟡 ISSUE: \"Add test coverage\"
-- Tests let you VERIFY the implementation works - without them you're blind
-- A feature without tests is not truly complete
+**测试对反馈循环至关重要：**
+- 如果还没有测试 → 标记为 🟡 问题："无测试 - 为此功能添加测试"
+- 如果有测试但未覆盖新代码 → 标记为 🟡 问题："添加测试覆盖"
+- 测试让你验证实现是否有效 - 没有测试你就是在盲操作
+- 没有测试的功能不是真正完成的
 
 "
 
@@ -2677,7 +2677,7 @@ load_context() {
     if [[ -f "CLAUDE.md" ]]; then
         CONTEXT="$CONTEXT
 
-## Project Rules (from CLAUDE.md):
+## 项目规则 (来自 CLAUDE.md):
 $(cat CLAUDE.md)"
     fi
 }
