@@ -685,7 +685,7 @@ if [[ "$1" == "init" ]]; then
 
     # Detect if this is an existing project (has source code files)
     EXISTING_PROJECT="false"
-    SRC_FILES=$(find . -maxdepth 3 -type f \( -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.php" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.tsx" -o -name "*.jsx" \) 2>/dev/null | grep -v node_modules | grep -v vendor | grep -v __pycache__ | head -20)
+    SRC_FILES=$(find . -maxdepth 3 -type f \( -name "*.cpp" -name "*.h" -name "*.c" -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.php" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.tsx" -o -name "*.jsx" \) 2>/dev/null | grep -v node_modules | grep -v vendor | grep -v __pycache__ | head -20)
     [[ -n "$SRC_FILES" ]] && EXISTING_PROJECT="true"
 
     if [[ "$EXISTING_PROJECT" == "true" ]]; then
