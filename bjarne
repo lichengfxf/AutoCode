@@ -1,57 +1,57 @@
 #!/bin/bash
-# Bjarne - Autonomous AI development system
+# Bjarne - 自主 AI 开发系统
 #
-# Commands:
-#   bjarne init [--safe] <idea.md>  - Bootstrap project from idea file
-#   bjarne refresh <notes.md>       - Add tasks from freeform notes
-#   bjarne task [opts] "desc"       - Run isolated single-task mode
-#   bjarne [opts] [n]               - Run n iterations (default 25)
-#   bjarne --rebuild                - Force rebuild Docker image (safe mode only)
-#   bjarne --update                 - Check for updates immediately
-#   bjarne --disable-auto-update    - Disable automatic update checks
-#   bjarne --enable-auto-update     - Re-enable automatic update checks
+# 命令：
+#   bjarne init [--safe] <idea.md>  - 从一个想法文件，初始化项目
+#   bjarne refresh <notes.md>       - 用一个自由格式笔记，添加任务到现有项目
+#   bjarne task [opts] "desc"       - 运行项目中的一个单独的任务
+#   bjarne [opts] [n]               - 运行 n 次迭代（默认 25 次）
+#   bjarne --rebuild                - 强制重新构建 Docker 镜像（仅安全模式）
+#   bjarne --update                 - 立即检查更新
+#   bjarne --disable-auto-update    - 禁用自动更新检查
+#   bjarne --enable-auto-update     - 重新启用自动更新检查
 #
-# Main loop options:
-#   --batch             - Enable batch mode (up to 5 related tasks per iteration)
-#   --batch=N, -bN      - Enable batch mode with custom size (up to N tasks)
-#                         Tasks are grouped by natural relatedness, not forced
+# 主循环选项：
+#   --batch             - 启用批量模式（每次最多处理 5 个相关任务）
+#   --batch=N, -bN      - 启用批量模式并指定自定义大小（最多 N 个任务）
+#                         任务按自然关联性分组，而非强制分组
 #
-# Task mode options:
-#   --safe              - Run in Docker container
-#   -f, --file <file>   - Read task description from file
-#   --branch <name>     - Use custom branch name
-#   --no-pr             - Skip PR creation
-#   -n <num>            - Max iterations (default 25)
+# task模式选项：
+#   --safe              - 在 Docker 容器中运行
+#   -f, --file <file>   - 从文件读取任务描述
+#   --branch <name>     - 使用自定义分支名称
+#   --no-pr             - 跳过 PR 创建
+#   -n <num>            - 最大迭代次数（默认 25）
 #
-# Safe mode (--safe): Runs Claude in a Docker container that can only access
-# the project directory. Use for unattended runs to prevent accidental
-# damage to other files on the system.
+# 安全模式 (--safe)：在 Docker 容器中运行 Claude，该容器只能访问
+# 项目目录。用于无人值守运行，以防止对系统上其他文件
+# 造成意外损坏。
 #
-# Loop: PLAN → EXECUTE → REVIEW → FIX
+# 循环：规划 → 执行 → 评审 → 修复
 #
-# Task mode: Isolated single-task fixes. Does NOT touch CONTEXT.md, TASKS.md.
-# Uses .bjarne/tasks/<task-id>/ for state. Auto-creates branch and PR if git/gh available.
+# 任务模式：隔离的单任务修复。不会修改 CONTEXT.md、TASKS.md。
+# 使用 .bjarne/tasks/<task-id>/ 存储状态。如果 git/gh 可用，会自动创建分支和 PR。
 #
-# idea.md/notes.md are freeform - write whatever you want. Bjarne will figure it out.
+# idea.md/notes.md 是自由格式的 - 随意编写内容。Bjarne 会自动理解。
 #
-# PROMPTS DIRECTORY
+# 提示词目录（使用者无需关心）
 #
-# All AI prompts are stored in the prompts/ directory (relative to this script).
-# This separation allows prompts to be edited independently from the script logic.
+# 所有 AI 自主开发相关提示词都存储在 prompts/ 目录中（相对于此脚本）。
+# 这种分离使提示词可以独立于脚本逻辑进行编辑。
 #
-# File Types:
-#   - *.md: Static prompts (loaded as-is)
-#   - *.template: Prompts requiring variable substitution
+# 文件类型：
+#   - *.md: 静态提示词（按原样加载）
+#   - *.template: 需要变量替换的提示词
 #
-# To add or modify prompts:
-#   1. Edit/create files in the prompts/ directory
-#   2. Use load_prompt() for static content, load_prompt_with_subst() for templates
-#   3. See prompts/README.md for detailed documentation
+# 要添加或修改提示词：
+#   1. 在 prompts/ 目录中编辑/创建文件
+#   2. 静态内容使用 load_prompt()，模板使用 load_prompt_with_subst()
+#   3. 详细文档请参阅 prompts/README.md
 #
 
 set -e
 
-# Colors
+# 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -59,84 +59,84 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Files
+# 文件
 TASK_FILE="TASKS.md"
 CONTEXT_FILE="CONTEXT.md"
 SPECS_DIR="specs"
 TASK_STATE=".task"
 
-# Retry settings
+# 重试设置
 MAX_RETRIES=5
 RETRY_DELAY=10
 
-# Logging (use absolute path to survive worktree cd)
+# 日志（使用绝对路径以在 worktree 切换后保持有效）
 BJARNE_PROJECT_ROOT="$(pwd)"
 LOG_DIR="$BJARNE_PROJECT_ROOT/.bjarne/logs"
 LOG_FILE="$LOG_DIR/bjarne.log"
 
-# Script directory and prompts location (use absolute path for reliability)
+# 脚本目录和提示词位置（使用绝对路径以确保可靠性）
 BJARNE_SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 PROMPTS_DIR="$BJARNE_SCRIPT_DIR/prompts"
 
-# Auto-update settings
+# 自动更新设置
 BJARNE_CONFIG_DIR="$HOME/.bjarne"
 BJARNE_LAST_UPDATE_CHECK="$BJARNE_CONFIG_DIR/last_update_check"
 BJARNE_UPDATE_DISABLED="$BJARNE_CONFIG_DIR/auto_update_disabled"
-BJARNE_UPDATE_INTERVAL=$((2 * 24 * 60 * 60))  # 2 days in seconds
+BJARNE_UPDATE_INTERVAL=$((2 * 24 * 60 * 60))  # 2 天（秒）
 BJARNE_REMOTE_URL="https://raw.githubusercontent.com/lichengfxf/AutoCode/refs/heads/master/bjarne"
 
 #==============================================================================
-# AUTO-UPDATE FUNCTIONS
+# 自动更新功能
 #==============================================================================
 
-# Check for updates (runs every 2 days, or immediately if --check-now is passed)
+# 检查更新（每 2 天运行一次，或如果传递了 --check-now 则立即检查）
 check_for_updates() {
-    local check_now="$1"  # If "true", skip the time interval check
+    local check_now="$1"  # 如果为 "true"，则跳过时间间隔检查
 
-    # Skip if auto-update is disabled
+    # 如果自动更新已禁用，则跳过
     if [[ -f "$BJARNE_UPDATE_DISABLED" ]]; then
         return 0
     fi
 
-    # Create config dir if needed
+    # 如果需要，创建配置目录
     mkdir -p "$BJARNE_CONFIG_DIR"
 
     local now=$(date +%s)
 
-    # Check if we need to check (every 2 days), unless --check-now is passed
+    # 检查是否需要检查（每 2 天），除非传递了 --check-now
     if [[ "$check_now" != "true" ]]; then
         if [[ -f "$BJARNE_LAST_UPDATE_CHECK" ]]; then
             local last_check=$(cat "$BJARNE_LAST_UPDATE_CHECK" 2>/dev/null || echo "0")
             if (( now - last_check < BJARNE_UPDATE_INTERVAL )); then
-                return 0  # Not time to check yet
+                return 0  # 还没到检查时间
             fi
         fi
     fi
 
-    # Record this check time
+    # 记录此次检查时间
     echo "$now" > "$BJARNE_LAST_UPDATE_CHECK"
 
-    # Get path to this script
+    # 获取此脚本的路径
     local script_path
     script_path=$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")
 
-    # Fetch remote script to temp file
+    # 获取远程脚本到临时文件
     local temp_remote=$(mktemp)
     if ! curl -fsSL "$BJARNE_REMOTE_URL" -o "$temp_remote" 2>/dev/null; then
         rm -f "$temp_remote"
-        return 0  # Silently fail if can't fetch
+        return 0  # 如果无法获取，静默失败
     fi
 
-    # Compare hashes
+    # 比较哈希值
     local local_hash=$(sha256sum "$script_path" 2>/dev/null | cut -d' ' -f1)
     local remote_hash=$(sha256sum "$temp_remote" 2>/dev/null | cut -d' ' -f1)
 
     if [[ "$local_hash" == "$remote_hash" ]]; then
         rm -f "$temp_remote"
-        return 0  # Already up to date
+        return 0  # 已是最新版本
     fi
 
-    # Update available - ask user
+    # 有可用更新 - 询问用户
     echo -e "${CYAN}bjarne 有新版本可用。${NC}"
     echo -n "是否更新? [y/N] "
     read -r response
@@ -147,10 +147,10 @@ check_for_updates() {
         return 0
     fi
 
-    # Perform update
+    # 执行更新
     echo -e "${CYAN}正在更新 bjarne...${NC}"
 
-    # Check if we need sudo
+    # 检查是否需要 sudo
     if [[ -w "$script_path" ]]; then
         cp "$temp_remote" "$script_path"
         chmod +x "$script_path"
@@ -172,7 +172,7 @@ check_for_updates() {
 }
 
 #==============================================================================
-# AUTO-UPDATE TOGGLE COMMANDS
+# 自动更新切换命令
 #==============================================================================
 
 if [[ "$1" == "--disable-auto-update" ]]; then
@@ -190,40 +190,40 @@ if [[ "$1" == "--enable-auto-update" ]]; then
 fi
 
 if [[ "$1" == "--update" ]]; then
-    # Force update check now, ignoring the 2-day interval
+    # 立即强制检查更新，忽略 2 天间隔
     echo -e "${CYAN}正在检查更新...${NC}"
     check_for_updates "true"
     exit 0
 fi
 
 #==============================================================================
-# RUN UPDATE CHECK (before processing commands)
+# 运行更新检查（在处理命令之前）
 #==============================================================================
 
-# Pass original args so the exit message can tell user what to re-run
+# 传递原始参数，以便退出消息可以告诉用户重新运行什么
 check_for_updates "$@"
 
-# Ensure log directory exists
+# 确保日志目录存在
 mkdir -p "$LOG_DIR"
 
-# Instance-specific temp folder for verbose command output
-# Uses PID + timestamp for uniqueness across concurrent instances
+# 实例专用的临时文件夹，用于详细命令输出
+# 使用 PID + 时间戳以确保跨并发实例的唯一性
 BJARNE_INSTANCE_ID="$$_$(date +%s)"
 BJN_BJARNE_TMP_DIR="/tmp/bjarne-${BJARNE_INSTANCE_ID}"
 export BJN_BJARNE_TMP_DIR
 mkdir -p "$BJN_BJARNE_TMP_DIR"
 
-# Cleanup function for temp folder
+# 临时文件夹清理函数
 cleanup_temp() {
     if [[ -d "$BJN_BJARNE_TMP_DIR" ]]; then
         rm -rf "$BJN_BJARNE_TMP_DIR"
     fi
 }
 
-# Trap signals to ensure cleanup on exit (normal, interrupt, terminate)
+# 捕获信号以确保在退出时清理（正常、中断、终止）
 trap cleanup_temp EXIT INT TERM
 
-# Log function
+# 日志函数
 log() {
     local level="$1"
     local msg="$2"
@@ -231,7 +231,7 @@ log() {
     echo "[$timestamp] [$level] $msg" >> "$LOG_FILE"
 }
 
-# Log with context (for failures)
+# 带上下文的日志（用于故障）
 log_failure() {
     local phase="$1"
     local attempt="$2"
@@ -245,13 +245,13 @@ log_failure() {
 
     {
         echo "=== BJARNE 故障日志 ==="
-        echo "Timestamp: $timestamp"
-        echo "Phase: $phase"
-        echo "Attempt: $attempt/$MAX_RETRIES"
-        echo "Exit code: $exit_code"
-        echo "Prompt size: $prompt_size bytes"
-        echo "Working directory: $(pwd)"
-        echo "Safe mode: $SAFE_MODE"
+        echo "时间戳: $timestamp"
+        echo "阶段: $phase"
+        echo "尝试: $attempt/$MAX_RETRIES"
+        echo "退出码: $exit_code"
+        echo "提示词大小: $prompt_size 字节"
+        echo "工作目录: $(pwd)"
+        echo "安全模式: $SAFE_MODE"
         echo ""
         echo "=== CLAUDE 输出 ==="
         echo "$output"
@@ -267,121 +267,123 @@ log_failure() {
         fi
     } > "$fail_file"
 
-    log "ERROR" "Failure logged to $fail_file"
+    log "ERROR" "故障已记录到 $fail_file"
     echo -e "${YELLOW}  故障详情已保存到: $fail_file${NC}"
 }
 
-# Safe mode (Docker) settings
+# 安全模式 (Docker) 设置
 BJARNE_DIR=".bjarne"
 DOCKERFILE="$BJARNE_DIR/Dockerfile"
 SAFE_MODE=false
 IMAGE_NAME=""
 
 #==============================================================================
-# PROMPTS - Defined early so both task mode and main loop can use them
+# 提示词 - 早期定义，以便任务模式和主循环都可以使用它们
 #==============================================================================
 #
-# The prompts/ directory contains all AI prompt templates used by bjarne.
+# prompts/ 目录包含 bjarne 使用的所有 AI 提示词模板。
 #
-# Directory Structure:
+# 目录结构：
 #   prompts/
-#   ├── plan.md              - Main planning phase prompt
-#   ├── execute.md           - Code execution phase prompt
-#   ├── review.md            - Review and validation prompt
-#   ├── fix.md               - Error fixing prompt
-#   ├── init.md              - Project initialization prompt
-#   ├── refresh.md           - Context refresh prompt
-#   ├── decompose.md         - Task decomposition prompt
-#   ├── finalize-worktree.md - Finalization with git worktree support
-#   ├── finalize.md          - Standard finalization prompt
-#   ├── batch-plan.md.template     - Batch mode planning (requires $BJN_BJN_BATCH_SIZE)
-#   ├── batch-execute.md           - Batch mode execution
-#   ├── batch-review.md            - Batch mode review
-#   ├── batch-fix.md               - Batch mode fixing
-#   ├── dockerfile.template        - Dockerfile generation (requires $BJN_base_image)
-#   └── verbose-rules.template     - Verbose output rules (requires $BJN_BJARNE_TMP_DIR)
+#   ├── plan.md              - 主规划阶段提示词
+#   ├── execute.md           - 代码执行阶段提示词
+#   ├── review.md            - 评审和验证提示词
+#   ├── fix.md               - 错误修复提示词
+#   ├── init.md              - 项目初始化提示词
+#   ├── refresh.md           - 上下文刷新提示词
+#   ├── decompose.md         - 任务分解提示词
+#   ├── finalize-worktree.md - 支持 git worktree 的最终化
+#   ├── finalize.md          - 标准最终化提示词
+#   ├── batch-plan.md.template     - 批量模式规划（需要 $BJN_BJN_BATCH_SIZE）
+#   ├── batch-execute.md           - 批量模式执行
+#   ├── batch-review.md            - 批量模式评审
+#   ├── batch-fix.md               - 批量模式修复
+#   ├── dockerfile.template        - Dockerfile 生成（需要 $BJN_base_image）
+#   └── verbose-rules.template     - 详细输出规则（需要 $BJN_BJARNE_TMP_DIR）
 #
-# File Naming Conventions:
-#   - *.md files: Static prompts loaded as-is
-#   - *.template files: Require variable substitution (use load_prompt_with_subst)
+# 文件命名约定：
+#   - *.md 文件：按原样加载的静态提示词
+#   - *.template 文件：需要变量替换的提示词（使用 load_prompt_with_subst）
 #
-# Usage Guidelines:
-#   - Use load_prompt() for static *.md files
-#   - Use load_prompt_with_subst() for *.template files or when variables need substitution
-#   - Always specify only the variables you intend to replace for safety
+# 使用指南：
+#   - 静态 *.md 文件使用 load_prompt()
+#   - *.template 文件或需要变量替换时使用 load_prompt_with_subst()
+#   - 为安全起见，始终仅指定您要替换的变量
 #
-# Adding New Prompts:
-#   1. Create the file in prompts/ directory
-#   2. Use .md extension for static content, .template for content with variables
-#   3. Load using load_prompt() or load_prompt_with_subst() as appropriate
-#   4. Variables in templates should use $VAR_NAME format and be documented
+# 添加新提示词：
+#   1. 在 prompts/ 目录中创建文件
+#   2. 静态内容使用 .md 扩展名，包含变量的内容使用 .template
+#   3. 适当使用 load_prompt() 或 load_prompt_with_subst() 加载
+#   4. 模板中的变量应使用 $VAR_NAME 格式并记录在文档中
+#   5. export $VAR_NAME
 #
 
-# Load prompt content from file with support for relative and absolute paths
-# Usage: load_prompt <prompt_file>
-# Args:
-#   prompt_file: Can be relative (e.g., "plan.md") or absolute (e.g., "/full/path/to/plan.md")
-# Returns: 0 on success, 1 if file not found
-# Note: Relative paths are resolved relative to $PROMPTS_DIR
+# 从文件加载提示词内容，支持相对路径和绝对路径
+# 用法：load_prompt <prompt_file>
+# 参数：
+#   prompt_file：可以是相对路径（例如 "plan.md"）或绝对路径（例如 "/full/path/to/plan.md"）
+# 返回：成功时返回 0，文件未找到时返回 1
+# 注意：相对路径相对于 $PROMPTS_DIR 解析
 load_prompt() {
     local prompt_file="$1"
     local full_path
 
-    # Determine if path is absolute or relative
+    # 确定路径是绝对路径还是相对路径
     if [[ "$prompt_file" = /* ]]; then
-        # Absolute path - use as-is
+        # 绝对路径 - 按原样使用
         full_path="$prompt_file"
     else
-        # Relative path - resolve relative to PROMPTS_DIR
+        # 相对路径 - 相对于 PROMPTS_DIR 解析
         full_path="$PROMPTS_DIR/$prompt_file"
     fi
 
-    # Validate file exists
+    # 验证文件是否存在
     if [[ ! -f "$full_path" ]]; then
-        log "ERROR" "Prompt file not found: $full_path"
+        log "ERROR" "未找到提示词文件: $full_path"
         return 1
     fi
 
     cat "$full_path"
 }
 
-# Load prompt content from template files and perform variable substitution
-# Usage: load_prompt_with_subst <template_file> [variables_to_substitute]
-# Args:
-#   template_file: Can be relative (e.g., "dockerfile.template") or absolute path
-#   variables_to_substitute: Optional list of variables to substitute (e.g., "$BJN_base_image")
-# Returns: 0 on success, 1 if file not found
-# Examples:
-#   load_prompt_with_subst "dockerfile.template"              # substitute all env vars
-#   load_prompt_with_subst "dockerfile.template" '$BJN_base_image' # only substitute $BJN_base_image
-# Note: Relative paths are resolved relative to $PROMPTS_DIR
+# 从模板文件加载提示词内容并执行变量替换
+# 用法：load_prompt_with_subst <template_file> [variables_to_substitute]
+# 参数：
+#   template_file：可以是相对路径（例如 "dockerfile.template"）或绝对路径
+#   variables_to_substitute：要替换的变量可选列表（例如 "$BJN_base_image"）
+# 返回：成功时返回 0，文件未找到时返回 1
+# 示例：
+#   load_prompt_with_subst "dockerfile.template"              # 替换所有环境变量
+#   load_prompt_with_subst "dockerfile.template" '$BJN_base_image' # 仅替换 $BJN_base_image
+# 注意：相对路径相对于 $PROMPTS_DIR 解析
 load_prompt_with_subst() {
     local template_file="$1"
     local full_path
 
-    # Determine if path is absolute or relative
+    # 确定路径是绝对路径还是相对路径
     if [[ "$template_file" = /* ]]; then
-        # Absolute path - use as-is
+        # 绝对路径 - 按原样使用
         full_path="$template_file"
     else
-        # Relative path - resolve relative to PROMPTS_DIR
+        # 相对路径 - 相对于 PROMPTS_DIR 解析
         full_path="$PROMPTS_DIR/$template_file"
     fi
 
-    # Validate file exists
+    # 验证文件是否存在
     if [[ ! -f "$full_path" ]]; then
-        log "ERROR" "Template file not found: $full_path"
+        log "ERROR" "未找到模板文件: $full_path"
         return 1
     fi
 
-    shift  # Remove filename from args
-    local vars="$*"  # Get variable list (optional)
+    shift  # 从参数中删除文件名
+    local vars="$*"  # 获取变量列表（可选）
 
+    # 使用envsubst命令解析变量，因为是独立的命令，变量必须export
     if [[ -n "$vars" ]]; then
-        # Only substitute specified variables
+        # 仅替换指定的变量
         envsubst "$vars" < "$full_path"
     else
-        # Substitute all environment variables
+        # 替换所有环境变量
         envsubst < "$full_path"
     fi
 }
@@ -393,28 +395,28 @@ REVIEW_PROMPT=$(load_prompt "review.md")
 FIX_PROMPT=$(load_prompt "fix.md")
 
 #==============================================================================
-# VERBOSE OUTPUT RULES - Injected into all prompts to save tokens
+# 针对输出数据很多的命令创建的规则 - 注入到所有提示词中以节省 tokens
 #==============================================================================
 
-# Generate verbose output rules with current temp folder path
+# 使用当前临时文件夹路径生成详细输出规则
 get_verbose_output_rules() {
     load_prompt_with_subst "verbose-rules.template"
 }
 
 #==============================================================================
-# SAFE MODE FUNCTIONS
+# 安全模式功能
 #==============================================================================
 
-# Detect if project uses safe mode
+# 检测项目是否使用安全模式
 detect_safe_mode() {
     if [[ -f "$DOCKERFILE" ]]; then
-        # Check if Docker is available
+        # 检查 Docker 是否可用
         if ! command -v docker &>/dev/null; then
             echo -e "${RED}错误: 安全模式需要 Docker 但未找到${NC}"
             exit 1
         fi
 
-        # Check if credentials exist
+        # 检查凭证是否存在
         if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
             echo -e "${RED}错误: 在 ~/.claude/.credentials.json 未找到 Claude 凭证${NC}"
             echo -e "请先在主机上运行 'claude' 进行认证"
@@ -422,13 +424,13 @@ detect_safe_mode() {
         fi
 
         SAFE_MODE=true
-        # Generate image name from current directory
+        # 从当前目录生成镜像名称
         PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
         IMAGE_NAME="bjarne-${PROJECT_NAME}"
     fi
 }
 
-# Build Docker image if needed
+# 如果需要，构建 Docker 镜像
 build_docker_image() {
     local force_rebuild="$1"
 
@@ -444,7 +446,7 @@ build_docker_image() {
     fi
 }
 
-# Get appropriate Docker base image for detected tech stack
+# 为检测到的技术栈获取合适的 Docker 基础镜像
 get_BJN_base_image() {
     if [[ -f "package.json" ]]; then
         echo "node:22-bookworm"
@@ -459,12 +461,12 @@ get_BJN_base_image() {
     elif [[ -f "pubspec.yaml" ]]; then
         echo "dart:stable"
     else
-        # Default to Node as it includes npm for Claude Code
+        # 默认使用 Node，因为它包含 Claude Code 所需的 npm
         echo "node:22-bookworm"
     fi
 }
 
-# Get volume mount for tech-specific dependencies
+# 获取技术特定依赖的卷挂载
 get_dep_volume() {
     local project_name="$1"
 
@@ -483,7 +485,7 @@ get_dep_volume() {
     fi
 }
 
-# Generate Dockerfile for safe mode
+# 为安全模式生成 Dockerfile
 generate_dockerfile() {
     local BJN_base_image=$(get_BJN_base_image)
 
@@ -491,14 +493,14 @@ generate_dockerfile() {
 
     load_prompt_with_subst "dockerfile.template" > "$DOCKERFILE"
 
-    echo -e "  - Generated $DOCKERFILE (base: $BJN_base_image)"
+    echo -e "  - 已生成 $DOCKERFILE (基础镜像: $BJN_base_image)"
 }
 
 #==============================================================================
-# GIT/GH DETECTION FUNCTIONS (for task command)
+# Git/GH 检测功能（用于 task 命令）
 #==============================================================================
 
-# Detect if git is available and we're in a repo
+# 检测 git 是否可用以及我们是否在仓库中
 detect_git() {
     if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
         echo "1"
@@ -507,7 +509,7 @@ detect_git() {
     fi
 }
 
-# Detect if gh CLI is available and authenticated
+# 检测 gh CLI 是否可用并已认证
 detect_gh() {
     if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
         echo "1"
@@ -516,18 +518,18 @@ detect_gh() {
     fi
 }
 
-# Generate task ID from description (uses first line only for slug)
+# 从描述生成任务 ID（仅使用第一行作为 slug）
 generate_task_id() {
     local description="$1"
     local timestamp=$(date +%s)
-    # Use only first non-empty line for slug (handles multi-line markdown)
+    # 仅使用第一个非空行作为 slug（处理多行 markdown）
     local first_line=$(echo "$description" | grep -v '^#' | grep -v '^$' | head -1)
     local slug=$(echo "$first_line" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-30)
     echo "${timestamp}-${slug}"
 }
 
-# Run claude with retry logic (safe mode aware)
-# Usage: run_claude "prompt" "PHASE_NAME"
+# 使用重试逻辑运行 claude（支持安全模式）
+# 用法：run_claude "prompt" "PHASE_NAME"
 run_claude() {
     local user_prompt="$1"
     local phase="${2:-UNKNOWN}"
@@ -536,28 +538,28 @@ run_claude() {
     local claude_log_file=""
     local output=""
 
-    # APPEND verbose output rules to ALL prompts (at end = more prominent)
+    # 将详细输出规则附加到所有提示词（在末尾 = 更显眼）
     local prompt="$user_prompt
 
 $(get_verbose_output_rules)"
     local prompt_size=${#prompt}
 
-    log "INFO" "Starting $phase phase (prompt: $prompt_size bytes)"
+    log "INFO" "启动 $phase 阶段（提示词：$prompt_size 字节）"
 
     while [[ $attempt -le $MAX_RETRIES ]]; do
-        # Generate claude output log file for this attempt
+        # 为此次尝试生成 claude 输出日志文件
         local timestamp=$(date '+%Y%m%d_%H%M%S')
         claude_log_file="$LOG_DIR/claude_${phase,,}_${timestamp}_attempt${attempt}.log"
 
-        # Write log header
+        # 写入日志头部
         {
             echo "=============================================================================="
             echo "CLAUDE 输入/输出日志"
             echo "=============================================================================="
-            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-            echo "Phase: $phase"
-            echo "Attempt: $attempt/$MAX_RETRIES"
-            echo "Prompt Size: $prompt_size bytes"
+            echo "时间戳: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "阶段: $phase"
+            echo "尝试: $attempt/$MAX_RETRIES"
+            echo "提示词大小: $prompt_size 字节"
             echo ""
             echo "------------------------------------------------------------------------------"
             echo "发送给Claude的 PROMPT (总共 $prompt_size 字节） :"
@@ -569,60 +571,60 @@ $(get_verbose_output_rules)"
             echo "------------------------------------------------------------------------------"
         } > "$claude_log_file"
 
-        # Run claude with tee to output to both screen and file in real-time
+        # 使用 tee 运行 claude，实时输出到屏幕和文件
         if [[ "$SAFE_MODE" == true ]]; then
-            # Run in Docker container (as 'bjarne' user, not root)
+            # 在 Docker 容器中运行（作为 'bjarne' 用户，而非 root）
             local docker_args="-v $(pwd):/workspace"
             docker_args+=" -v $HOME/.claude/.credentials.json:/home/bjarne/.claude/.credentials.json:ro"
 
-            # Add gh CLI config if available (for PR creation in task mode)
+            # 如果可用，添加 gh CLI 配置（用于任务模式中的 PR 创建）
             if [[ -d "$HOME/.config/gh" ]]; then
                 docker_args+=" -v $HOME/.config/gh:/home/bjarne/.config/gh:ro"
             fi
 
-            # Add gitconfig if available (for commits)
+            # 如果可用，添加 gitconfig（用于提交）
             if [[ -f "$HOME/.gitconfig" ]]; then
                 docker_args+=" -v $HOME/.gitconfig:/home/bjarne/.gitconfig:ro"
             fi
 
-            # Add dependency volume if applicable
+            # 如果适用，添加依赖卷
             local dep_volume=$(get_dep_volume "$PROJECT_NAME")
             if [[ -n "$dep_volume" ]]; then
                 docker_args+=" -v $dep_volume"
             fi
 
-            # Mount temp folder for verbose output logs (same path inside container)
+            # 挂载临时文件夹用于详细输出日志（容器内路径相同）
             docker_args+=" -v $BJN_BJARNE_TMP_DIR:$BJN_BJARNE_TMP_DIR"
 
-            # Run with tee for real-time output to both screen and file
+            # 使用 tee 运行，实时输出到屏幕和文件
             docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
                 $docker_args -w /workspace "$IMAGE_NAME" \
                 claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
-            # Get exit code from pipe (use PIPESTATUS)
+            # 从管道获取退出码（使用 PIPESTATUS）
             exit_code=${PIPESTATUS[0]}
         else
-            # Run on host with tee for real-time output
+            # 在主机上使用 tee 运行，实时输出
             claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
-            # Get exit code from pipe
+            # 从管道获取退出码
             exit_code=${PIPESTATUS[0]}
         fi
 
-        # Write log footer
+        # 写入日志尾部
         {
             echo ""
             echo "------------------------------------------------------------------------------"
-            echo "Exit Code: $exit_code"
+            echo "退出码: $exit_code"
             echo "=============================================================================="
         } >> "$claude_log_file"
 
-        # Show log file location
+        # 显示日志文件位置
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${CYAN}  [日志] $claude_log_file${NC}"
             log "INFO" "$phase 阶段完成->成功 (日志: $claude_log_file)"
             return 0
         fi
 
-        # Check for the specific streaming error
+        # 检查特定的流式错误
         output=$(tail -100 "$claude_log_file")
         if echo "$output" | grep -q "only prompt commands are supported in streaming mode"; then
             log "ERROR" "$phase: 收到流式模式错误 (第 $attempt 次尝试)"
@@ -634,7 +636,7 @@ $(get_verbose_output_rules)"
 
         echo -e "${CYAN}  [日志] $claude_log_file${NC}"
 
-        # Log failure details including the actual prompt
+        # 记录故障详情，包括实际提示词
         log_failure "$phase" "$attempt" "$exit_code" "$output" "$prompt_size" "$prompt"
 
         if [[ $attempt -lt $MAX_RETRIES ]]; then
@@ -652,14 +654,14 @@ $(get_verbose_output_rules)"
 }
 
 #==============================================================================
-# INIT COMMAND - Bootstrap from idea file (works on new or existing projects)
+# INIT 命令 - 从想法文件引导项目（适用于新项目或现有项目）
 #==============================================================================
 if [[ "$1" == "init" ]]; then
-    # Parse --safe flag and idea file
+    # 解析 --safe 标志和想法文件
     INIT_SAFE_MODE=false
     IDEA_FILE=""
 
-    shift  # Remove "init" from args
+    shift  # 从参数中删除 "init"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --safe)
@@ -683,7 +685,7 @@ if [[ "$1" == "init" ]]; then
         exit 1
     fi
 
-    # Detect if this is an existing project (has source code files)
+    # 检测这是否是现有项目（有源代码文件）
     EXISTING_PROJECT="false"
     SRC_FILES=$(find . -maxdepth 3 -type f \( -name "*.cpp" -name "*.h" -name "*.c" -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.php" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.tsx" -o -name "*.jsx" \) 2>/dev/null | grep -v node_modules | grep -v vendor | grep -v __pycache__ | head -20)
     [[ -n "$SRC_FILES" ]] && EXISTING_PROJECT="true"
@@ -694,7 +696,7 @@ if [[ "$1" == "init" ]]; then
         echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化新项目${NC}"
     fi
 
-    # Detect existing environment
+    # 检测现有环境
     DETECTED=""
     [[ -f "package.json" ]] && DETECTED="${DETECTED}找到: package.json (Node.js/JavaScript)\n"
     [[ -f "tsconfig.json" ]] && DETECTED="${DETECTED}找到: tsconfig.json (TypeScript)\n"
@@ -709,7 +711,7 @@ if [[ "$1" == "init" ]]; then
     [[ -d "node_modules" ]] || [[ -f "package.json" ]] && [[ ! -d "node_modules" ]] && DETECTED="${DETECTED}注意: 缺少 node_modules - 需要 npm install\n"
     [[ -d "vendor" ]] || [[ -f "composer.json" ]] && [[ ! -d "vendor" ]] && DETECTED="${DETECTED}注意: 缺少 vendor - 需要 composer install\n"
 
-    # For existing projects, include source file list
+    # 对于现有项目，包含源文件列表
     EXISTING_CODE_INFO=""
     if [[ "$EXISTING_PROJECT" == "true" ]]; then
         EXISTING_CODE_INFO="
@@ -728,7 +730,7 @@ $SRC_FILES
 
     IDEA_CONTENT=$(cat "$IDEA_FILE")
 
-    # Read CLAUDE.md if exists
+    # 读取 CLAUDE.md（如果存在）
     CLAUDE_MD=""
     if [[ -f "CLAUDE.md" ]]; then
         CLAUDE_MD="
@@ -752,14 +754,14 @@ $CLAUDE_MD
 
 $INIT_PROMPT" "INIT"
 
-    # Verify files were created
+    # 验证文件是否已创建
     if [[ -f "$CONTEXT_FILE" ]] && [[ -f "$TASK_FILE" ]]; then
         echo -e "${GREEN}项目初始化成功!${NC}"
         echo -e "  - $CONTEXT_FILE"
         echo -e "  - $TASK_FILE"
         [[ -d "$SPECS_DIR" ]] && echo -e "  - $SPECS_DIR/"
 
-        # Init git repo if git available and not already in a repo
+        # 如果 git 可用且尚未在仓库中，则初始化 git 仓库
         if command -v git &> /dev/null; then
             if ! git rev-parse --git-dir &> /dev/null 2>&1; then
                 git init -q && \
@@ -769,12 +771,12 @@ $INIT_PROMPT" "INIT"
             fi
         fi
 
-        # Generate Docker config if --safe flag was used
+        # 如果使用了 --safe 标志，则生成 Docker 配置
         if [[ "$INIT_SAFE_MODE" == true ]]; then
             echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
             generate_dockerfile
 
-            # Add .bjarne to .gitignore if not already there
+            # 将 .bjarne 添加到 .gitignore（如果尚未添加）
             if [[ -f ".gitignore" ]]; then
                 if ! grep -q "^\.bjarne/" ".gitignore" 2>/dev/null; then
                     echo ".bjarne/" >> ".gitignore"
@@ -799,7 +801,7 @@ $INIT_PROMPT" "INIT"
 fi
 
 #==============================================================================
-# REBUILD COMMAND - Force rebuild Docker image
+# REBUILD 命令 - 强制重新构建 Docker 镜像
 #==============================================================================
 if [[ "$1" == "--rebuild" ]]; then
     detect_safe_mode
@@ -816,7 +818,7 @@ if [[ "$1" == "--rebuild" ]]; then
 fi
 
 #==============================================================================
-# REFRESH COMMAND - Add tasks from freeform notes
+# REFRESH 命令 - 从自由格式笔记添加任务
 #==============================================================================
 if [[ "$1" == "refresh" ]]; then
     NOTES_FILE="$2"
@@ -849,7 +851,7 @@ if [[ "$1" == "refresh" ]]; then
     CONTEXT_CONTENT=$(cat "$CONTEXT_FILE")
     TASKS_CONTENT=$(cat "$TASK_FILE")
 
-    # Read CLAUDE.md if exists
+    # 读取 CLAUDE.md（如果存在）
     CLAUDE_MD=""
     if [[ -f "CLAUDE.md" ]]; then
         CLAUDE_MD="
@@ -877,7 +879,7 @@ $CLAUDE_MD
 
 $REFRESH_PROMPT" "REFRESH"
 
-    # Show result
+    # 显示结果
     NEW_TASKS=$(grep -c '^\s*- \[ \]' "$TASK_FILE" 2>/dev/null || echo "0")
     echo -e "${GREEN}项目已刷新!${NC}"
     echo -e "  - $TASK_FILE 中有 $NEW_TASKS 个待处理任务"
@@ -888,12 +890,12 @@ $REFRESH_PROMPT" "REFRESH"
 fi
 
 #==============================================================================
-# TASK COMMAND - Isolated single-task mode
+# TASK 命令 - 隔离的单任务模式
 #==============================================================================
 if [[ "$1" == "task" ]]; then
-    shift  # Remove "task" from args
+    shift  # 从参数中删除 "task"
 
-    # Parse task command arguments
+    # 解析任务命令参数
     TASK_SAFE_MODE=false
     TASK_DESCRIPTION=""
     TASK_NO_PR=false
@@ -919,14 +921,14 @@ if [[ "$1" == "task" ]]; then
                 shift 2
                 ;;
             *)
-                # Assume it's the task description (or file path)
+                # 假设它是任务描述（或文件路径）
                 TASK_DESCRIPTION="$1"
                 shift
                 ;;
         esac
     done
 
-    # Auto-detect: if description is an existing file, read it
+    # 自动检测：如果描述是现有文件，则读取它
     if [[ -n "$TASK_DESCRIPTION" ]] && [[ -f "$TASK_DESCRIPTION" ]]; then
         TASK_DESCRIPTION=$(cat "$TASK_DESCRIPTION")
     fi
@@ -942,11 +944,11 @@ if [[ "$1" == "task" ]]; then
         exit 1
     fi
 
-    # Detect git and gh availability
+    # 检测 git 和 gh 可用性
     HAS_GIT=$(detect_git)
     HAS_GH=$(detect_gh)
 
-    # Generate task ID and paths (use absolute paths to survive worktree cd)
+    # 生成任务 ID 和路径（使用绝对路径以在 worktree 切换后保持有效）
     TASK_ID=$(generate_task_id "$TASK_DESCRIPTION")
     TASK_DIR="$BJARNE_PROJECT_ROOT/.bjarne/tasks/$TASK_ID"
     TASK_LOG_DIR="$TASK_DIR/logs"
@@ -956,7 +958,7 @@ if [[ "$1" == "task" ]]; then
     TASK_SUMMARY_FILE="$TASK_DIR/summary.md"
     TASK_ORIGINAL_FILE="$TASK_DIR/TASK.md"
 
-    # Create task directory structure
+    # 创建任务目录结构
     mkdir -p "$TASK_LOG_DIR"
     echo "$TASK_DESCRIPTION" > "$TASK_ORIGINAL_FILE"
 
@@ -966,7 +968,7 @@ if [[ "$1" == "task" ]]; then
     echo -e "  Git 可用: $([ \"$HAS_GIT\" == \"1\" ] && echo \"是\" || echo \"否\")"
     echo -e "  GitHub CLI: $([ \"$HAS_GH\" == \"1\" ] && echo \"是\" || echo \"否\")"
 
-    # Task-specific log function
+    # 任务专用日志函数
     task_log() {
         local level="$1"
         local msg="$2"
@@ -978,7 +980,7 @@ if [[ "$1" == "task" ]]; then
     task_log "INFO" "Task: $TASK_DESCRIPTION"
     task_log "INFO" "Task ID: $TASK_ID"
 
-    # Track original branch if git available
+    # 如果 git 可用，跟踪原始分支
     ORIGINAL_BRANCH=""
     ORIGINAL_DIR=$(pwd)
     WORKTREE_PATH=""
@@ -988,14 +990,14 @@ if [[ "$1" == "task" ]]; then
         ORIGINAL_BRANCH=$(git rev-parse --abbrev-ref HEAD)
         task_log "INFO" "Starting branch: $ORIGINAL_BRANCH"
 
-        # Create isolated worktree unless --no-worktree flag is set
+        # 除非设置了 --no-worktree 标志，否则创建隔离的 worktree
         if [[ "$TASK_NO_WORKTREE" != true ]]; then
-            # Generate branch name from task description using Claude (with fallback)
+            # 使用 Claude 从任务描述生成分支名（带回退）
             branch_slug=""
             if command -v claude &>/dev/null; then
                 branch_slug=$(echo "$TASK_DESCRIPTION" | head -100 | claude -p "为这个任务生成一个简洁的 git 分支名。规则：最多40个字符，小写，仅使用连字符，开头结尾没有连字符，描述工作内容。只输出分支名，不要输出其他内容。" 2>/dev/null | tr -d '[:space:]' | head -c 40)
             fi
-            # Fallback to simple slug if Claude fails or unavailable
+            # 如果 Claude 失败或不可用，则回退到简单的 slug
             if [[ -z "$branch_slug" ]]; then
                 first_line=$(echo "$TASK_DESCRIPTION" | grep -v '^#' | grep -v '^>' | grep -v '^$' | head -1)
                 branch_slug=$(echo "$first_line" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-40)
@@ -1006,9 +1008,9 @@ if [[ "$1" == "task" ]]; then
             echo -e "${CYAN}正在创建隔离的 worktree...${NC}"
             task_log "INFO" "Creating worktree at $WORKTREE_PATH on branch $WORKTREE_BRANCH"
 
-            # Create worktree with new branch
+            # 使用新分支创建 worktree
             if ! git worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" 2>/dev/null; then
-                # Branch might already exist, try without -b
+                # 分支可能已存在，尝试不带 -b
                 if ! git worktree add "$WORKTREE_PATH" "$WORKTREE_BRANCH" 2>/dev/null; then
                     echo -e "${RED}创建 worktree 失败 - 回退到当前分支${NC}"
                     task_log "WARN" "Worktree creation failed, using current checkout"
@@ -1022,10 +1024,10 @@ if [[ "$1" == "task" ]]; then
                 echo -e "${GREEN}分支: $WORKTREE_BRANCH${NC}"
                 task_log "INFO" "Worktree created successfully"
 
-                # Change to worktree directory
+                # 切换到 worktree 目录
                 cd "$WORKTREE_PATH"
 
-                # Update task directory paths to be absolute (so they work from worktree)
+                # 更新任务目录路径为绝对路径（以便从 worktree 工作）
                 TASK_DIR="$ORIGINAL_DIR/.bjarne/tasks/$TASK_ID"
                 TASK_LOG_DIR="$TASK_DIR/logs"
                 TASK_LOG_FILE="$TASK_LOG_DIR/task.log"
@@ -1037,7 +1039,7 @@ if [[ "$1" == "task" ]]; then
         fi
     fi
 
-    # Cleanup function for worktree
+    # Worktree 的清理函数
     cleanup_worktree() {
         if [[ -n "$WORKTREE_PATH" ]] && [[ -d "$WORKTREE_PATH" ]]; then
             task_log "INFO" "Cleaning up worktree at $WORKTREE_PATH"
@@ -1046,10 +1048,10 @@ if [[ "$1" == "task" ]]; then
         fi
     }
 
-    # Trap to cleanup on exit/interrupt
+    # 捕获信号以便在退出/中断时清理
     trap cleanup_worktree EXIT
 
-    # Handle safe mode for task
+    # 为任务处理安全模式
     if [[ "$TASK_SAFE_MODE" == true ]]; then
         if [[ ! -f "$DOCKERFILE" ]]; then
             echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
@@ -1063,7 +1065,7 @@ if [[ "$1" == "task" ]]; then
 
     echo ""
 
-    # Read project context if available (read-only)
+    # 读取项目上下文（如果可用，只读）
     PROJECT_CONTEXT=""
     if [[ -f "$CONTEXT_FILE" ]]; then
         PROJECT_CONTEXT="## 项目上下文 (来自 CONTEXT.md):
@@ -1072,7 +1074,7 @@ $(cat "$CONTEXT_FILE")
 "
     fi
 
-    # Read specs if available (read-only)
+    # 读取规范说明（如果可用，只读）
     SPECS_CONTENT=""
     if [[ -d "$SPECS_DIR" ]]; then
         SPECS_FILES=$(find "$SPECS_DIR" -name "*.md" 2>/dev/null)
@@ -1084,7 +1086,7 @@ $(cat $SPECS_DIR/*.md 2>/dev/null)
         fi
     fi
 
-    # Read CLAUDE.md if exists
+    # 读取 CLAUDE.md（如果存在）
     CLAUDE_MD_CONTENT=""
     if [[ -f "CLAUDE.md" ]]; then
         CLAUDE_MD_CONTENT="## 项目规则 (来自 CLAUDE.md):
@@ -1094,12 +1096,12 @@ $(cat CLAUDE.md)
     fi
 
     #--------------------------------------------------------------------------
-    # DECOMPOSE PHASE - Break task into subtasks
+    # 分解阶段 - 将任务分解为子任务
     #--------------------------------------------------------------------------
     echo -e "${BLUE}[分解]${NC} 正在分解任务..."
     task_log "INFO" "[DECOMPOSE] 开始..."
 
-    # Build git workflow instructions based on worktree status
+    # 根据 worktree 状态构建 git 工作流指令
     if [[ -n "$WORKTREE_PATH" ]]; then
         GIT_WORKFLOW_INSTRUCTIONS="## Git 工作流
 **你正在分支 $WORKTREE_BRANCH 上的隔离 GIT WORKTREE 中工作**
@@ -1146,15 +1148,15 @@ $DECOMPOSE_PROMPT_BASE"
     if ! run_claude "$DECOMPOSE_FULL_PROMPT" "DECOMPOSE"; then
         echo -e "${RED}分解阶段失败 - 中止${NC}"
         task_log "ERROR" "[DECOMPOSE] Failed - aborting"
-        # EXIT trap handles worktree cleanup
+        # EXIT trap 处理 worktree 清理
         exit 1
     fi
 
-    # Verify SUBTASKS.md was created
+    # 验证 SUBTASKS.md 是否已创建
     if [[ ! -f "$TASK_SUBTASKS" ]]; then
         echo -e "${RED}错误: 未创建 SUBTASKS.md${NC}"
         task_log "ERROR" "[DECOMPOSE] No SUBTASKS.md created"
-        # EXIT trap handles worktree cleanup
+        # EXIT trap 处理 worktree 清理
         exit 1
     fi
 
@@ -1164,11 +1166,11 @@ $DECOMPOSE_PROMPT_BASE"
     echo ""
 
     #--------------------------------------------------------------------------
-    # TASK LOOP - Run until all subtasks complete
-    # Uses main prompts with task-mode context injection
+    # 任务循环 - 运行直到所有子任务完成
+    # 使用主提示词并注入任务模式上下文
     #--------------------------------------------------------------------------
 
-    # Build worktree context if in a worktree
+    # 如果在 worktree 中，构建 worktree 上下文
     WORKTREE_CONTEXT=""
     if [[ -n "$WORKTREE_PATH" ]]; then
         WORKTREE_CONTEXT="
@@ -1180,7 +1182,7 @@ $DECOMPOSE_PROMPT_BASE"
 "
     fi
 
-    # Build task mode context header (injected before each prompt)
+    # 构建任务模式上下文头部（在每个提示词之前注入）
     TASK_MODE_HEADER="## 任务模式 - 隔离修复
 $WORKTREE_CONTEXT
 **文件映射（读取这些而不是默认值）：**
@@ -1220,7 +1222,7 @@ EXPECTED_OUTCOMES:
     echo ""
 
     for i in $(seq 1 $TASK_MAX_ITERATIONS); do
-        # Check for remaining subtasks
+        # 检查剩余的子任务
         if ! grep -q '^\s*- \[ \]' "$TASK_SUBTASKS"; then
             echo -e "${GREEN}所有子任务已完成!${NC}"
             task_log "INFO" "All subtasks complete"
@@ -1231,10 +1233,10 @@ EXPECTED_OUTCOMES:
         echo -e "${YELLOW}=== 任务第 $i/$TASK_MAX_ITERATIONS 轮 (剩余 $REMAINING 个子任务) ===${NC}"
         task_log "INFO" "=== Iteration $i/$TASK_MAX_ITERATIONS ($REMAINING remaining) ==="
 
-        # Build context for this iteration (task mode header + project context)
+        # 构建此迭代的上下文（任务模式头部 + 项目上下文）
         ITER_CONTEXT="$TASK_MODE_HEADER$PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT"
 
-        # PLAN (uses main PLAN_PROMPT with task context)
+        # 规划（使用主 PLAN_PROMPT 和任务上下文）
         echo -e "${BLUE}[1/4 规划]${NC} 分析子任务..."
         task_log "INFO" "[规划] 开始..."
         if ! run_claude "$ITER_CONTEXT
@@ -1251,11 +1253,11 @@ $PLAN_PROMPT" "TASK_PLAN"; then
             continue
         fi
 
-        # Log which tasks are being worked on
+        # 记录正在处理的任务
         CURRENT_TASKS=$(grep -E '^TASK:|^TASKS:' "$TASK_STATE_FILE" 2>/dev/null | head -3)
         task_log "INFO" "[规划] 工作中: $CURRENT_TASKS"
 
-        # EXECUTE (uses main EXECUTE_PROMPT with task context)
+        # 执行（使用主 EXECUTE_PROMPT 和任务上下文）
         echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
         task_log "INFO" "[执行] 开始..."
         if ! run_claude "$ITER_CONTEXT
@@ -1267,7 +1269,7 @@ $EXECUTE_PROMPT" "TASK_EXECUTE"; then
         fi
         task_log "INFO" "[执行] 完成"
 
-        # REVIEW (uses main REVIEW_PROMPT with task context)
+        # 评审（使用主 REVIEW_PROMPT 和任务上下文）
         echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
         task_log "INFO" "[评审] 开始..."
         if ! run_claude "$ITER_CONTEXT
@@ -1279,7 +1281,7 @@ $REVIEW_PROMPT" "TASK_REVIEW"; then
         fi
         task_log "INFO" "[评审] 完成"
 
-        # FIX (uses main FIX_PROMPT with task context)
+        # 修复（使用主 FIX_PROMPT 和任务上下文）
         echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
         task_log "INFO" "[修复] 开始..."
         if ! run_claude "$ITER_CONTEXT
@@ -1291,7 +1293,7 @@ $FIX_PROMPT" "TASK_FIX"; then
         fi
         task_log "INFO" "[修复] 完成"
 
-        # Log completed count
+        # 记录完成数量
         COMPLETED_NOW=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || COMPLETED_NOW=0
         task_log "INFO" "第 $i 轮完成 - 目前已完成 $COMPLETED_NOW 个子任务"
 
@@ -1299,26 +1301,26 @@ $FIX_PROMPT" "TASK_FIX"; then
     done
 
     #--------------------------------------------------------------------------
-    # FINALIZE - Push, create PR, generate summary (Claude handles git workflow)
+    # 最终化 - 推送、创建 PR、生成摘要（Claude 处理 git 工作流）
     #--------------------------------------------------------------------------
     echo ""
     echo -e "${CYAN}[FINALIZE]${NC} 正在完成任务..."
     task_log "INFO" "[FINALIZE] 开始..."
 
-    # Build finalize prompt - different based on worktree mode
+    # 构建最终化提示词 - 基于 worktree 模式有所不同
     if [[ -n "$WORKTREE_PATH" ]]; then
         FINALIZE_PROMPT=$(load_prompt_with_subst "finalize-worktree.md" )
     else
         FINALIZE_PROMPT=$(load_prompt "finalize.md")
     fi
 
-    # Add no-pr constraint if flag set
+    # 如果设置了标志，添加 no-pr 约束
     if [[ "$TASK_NO_PR" == true ]]; then
         FINALIZE_PROMPT+="
 - 不要创建 pull request (设置了 --no-pr 标志)"
     fi
 
-    # Add context about original branch
+    # 添加关于原始分支的上下文
     FINALIZE_PROMPT+="
 - 原始分支是: $ORIGINAL_BRANCH
 - 子任务文件: $TASK_SUBTASKS
@@ -1327,7 +1329,7 @@ $FIX_PROMPT" "TASK_FIX"; then
 $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
 "
 
-    # Run finalize phase
+    # 运行最终化阶段
     if ! run_claude "$FINALIZE_PROMPT" "FINALIZE"; then
         echo -e "${YELLOW}完成阶段有问题 - 请检查上方输出${NC}"
         task_log "WARN" "[FINALIZE] 有问题"
@@ -1335,8 +1337,8 @@ $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
         task_log "INFO" "[FINALIZE] 完成"
     fi
 
-    # Return to original branch (safety fallback in case Claude didn't)
-    # Skip if in worktree - the EXIT trap handles cleanup
+    # 返回原始分支（安全回退，以防 Claude 没有返回）
+    # 如果在 worktree 中，则跳过 - EXIT trap 会处理清理
     if [[ "$HAS_GIT" == "1" ]] && [[ -z "$WORKTREE_PATH" ]]; then
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
         if [[ "$CURRENT_BRANCH" != "$ORIGINAL_BRANCH" ]]; then
@@ -1344,18 +1346,18 @@ $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
         fi
     fi
 
-    # Log final stats
+    # 记录最终统计
     FINAL_COMPLETED=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_COMPLETED=0
     FINAL_REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_SUBTASKS" 2>/dev/null) || FINAL_REMAINING=0
     task_log "INFO" "=== 任务完成: 已完成 $FINAL_COMPLETED 个，剩余 $FINAL_REMAINING 个 ==="
 
-    # Output completion
+    # 输出完成信息
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}任务完成${NC}"
     echo -e "${GREEN}========================================${NC}"
 
-    # Cleanup task state directory
+    # 清理任务状态目录
     echo -e "\n${CYAN}正在清理任务状态...${NC}"
     rm -rf "$TASK_DIR"
     echo -e "${GREEN}完成${NC}"
@@ -1363,10 +1365,10 @@ $(cat "$TASK_SUBTASKS" 2>/dev/null || echo "未找到子任务文件")
 fi
 
 #==============================================================================
-# MAIN LOOP - PLAN → EXECUTE → REVIEW → FIX
+# 主循环 - 规划 → 执行 → 评审 → 修复
 #==============================================================================
 
-# Parse main loop arguments
+# 解析主循环参数
 MAX_ITERATIONS=25
 BATCH_MODE=false
 BJN_BATCH_SIZE=5
@@ -1375,30 +1377,30 @@ export BJN_BATCH_SIZE
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --batch=*)
-            # --batch=N syntax: batch mode with custom size
+            # --batch=N 语法：带自定义大小的批量模式
             BATCH_MODE=true
             BJN_BATCH_SIZE="${1#--batch=}"
             shift
             ;;
         --batch)
-            # --batch alone: batch mode with default size
+            # 仅 --batch：带默认大小的批量模式
             BATCH_MODE=true
             shift
             ;;
         -b=*)
-            # -b=N syntax: batch mode with custom size
+            # -b=N 语法：带自定义大小的批量模式
             BATCH_MODE=true
             BJN_BATCH_SIZE="${1#-b=}"
             shift
             ;;
         -b[0-9]*)
-            # -bN syntax (no space): batch mode with custom size
+            # -bN 语法（无空格）：带自定义大小的批量模式
             BATCH_MODE=true
             BJN_BATCH_SIZE="${1#-b}"
             shift
             ;;
         -b)
-            # -b alone: batch mode with default size
+            # 仅 -b：带默认大小的批量模式
             BATCH_MODE=true
             shift
             ;;
@@ -1418,7 +1420,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check required files
+# 检查必需文件
 if [[ ! -f "$TASK_FILE" ]]; then
     echo -e "${RED}错误: 未找到 $TASK_FILE${NC}"
     echo -e "请先运行 'bjarne init <idea.md>'"
@@ -1430,13 +1432,13 @@ if [[ ! -f "$CONTEXT_FILE" ]]; then
 fi
 
 
-# Load context fresh each iteration
+# 每次迭代重新加载上下文
 load_context() {
     CONTEXT=""
     if [[ -f "$CONTEXT_FILE" ]]; then
         CONTEXT+=$(cat "$CONTEXT_FILE")
     fi
-    # Also include CLAUDE.md if exists (project rules)
+    # 如果存在，也包含 CLAUDE.md（项目规则）
     if [[ -f "CLAUDE.md" ]]; then
         CONTEXT="$CONTEXT
 
@@ -1445,7 +1447,7 @@ $(cat CLAUDE.md)"
     fi
 }
 
-# Detect and setup safe mode if applicable
+# 检测并设置安全模式（如果适用）
 detect_safe_mode
 if [[ "$SAFE_MODE" == true ]]; then
     echo -e "${CYAN}检测到安全模式 (找到 .bjarne/Dockerfile)${NC}"
@@ -1453,10 +1455,10 @@ if [[ "$SAFE_MODE" == true ]]; then
     echo ""
 fi
 
-# Log session start
-log "INFO" "=== Bjarne session started ==="
-log "INFO" "Max iterations: $MAX_ITERATIONS, Safe mode: $SAFE_MODE, Batch mode: $BATCH_MODE (size: $BJN_BATCH_SIZE)"
-log "INFO" "Working directory: $(pwd)"
+# 记录会话开始
+log "INFO" "=== Bjarne 会话开始 ==="
+log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 批量模式: $BATCH_MODE (大小: $BJN_BATCH_SIZE)"
+log "INFO" "工作目录: $(pwd)"
 
 echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
 if [[ "$BATCH_MODE" == true ]]; then
@@ -1467,10 +1469,10 @@ echo -e "${CYAN}日志: $LOG_FILE${NC}"
 echo ""
 
 for i in $(seq 1 $MAX_ITERATIONS); do
-    # Load context fresh each iteration
+    # 每次迭代重新加载上下文
     load_context
 
-    # Check for remaining tasks
+    # 检查剩余任务
     if ! grep -q '^\s*- \[ \]' "$TASK_FILE"; then
         echo -e "${GREEN}所有任务已完成!${NC}"
         rm -f "$TASK_STATE"
@@ -1480,7 +1482,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_FILE" || echo "0")
     echo -e "${YELLOW}=== 第 $i/$MAX_ITERATIONS 轮 (剩余 $REMAINING 个任务) ===${NC}"
 
-    # Select prompts based on batch mode
+    # 根据批量模式选择提示词
     if [[ "$BATCH_MODE" == true ]]; then
         ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" )
         ACTIVE_EXECUTE_PROMPT=$(load_prompt "batch-execute.md")
