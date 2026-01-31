@@ -75,7 +75,7 @@ LOG_DIR="$BJARNE_PROJECT_ROOT/.bjarne/logs"
 LOG_FILE="$LOG_DIR/bjarne.log"
 
 # Script directory and prompts location (use absolute path for reliability)
-BJARNE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BJARNE_SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 PROMPTS_DIR="$BJARNE_SCRIPT_DIR/prompts"
 
 # Auto-update settings
@@ -209,13 +209,14 @@ mkdir -p "$LOG_DIR"
 # Instance-specific temp folder for verbose command output
 # Uses PID + timestamp for uniqueness across concurrent instances
 BJARNE_INSTANCE_ID="$$_$(date +%s)"
-BJARNE_TMP_DIR="/tmp/bjarne-${BJARNE_INSTANCE_ID}"
-mkdir -p "$BJARNE_TMP_DIR"
+BJN_BJARNE_TMP_DIR="/tmp/bjarne-${BJARNE_INSTANCE_ID}"
+export BJN_BJARNE_TMP_DIR
+mkdir -p "$BJN_BJARNE_TMP_DIR"
 
 # Cleanup function for temp folder
 cleanup_temp() {
-    if [[ -d "$BJARNE_TMP_DIR" ]]; then
-        rm -rf "$BJARNE_TMP_DIR"
+    if [[ -d "$BJN_BJARNE_TMP_DIR" ]]; then
+        rm -rf "$BJN_BJARNE_TMP_DIR"
     fi
 }
 
@@ -293,12 +294,12 @@ IMAGE_NAME=""
 #   ├── decompose.md         - Task decomposition prompt
 #   ├── finalize-worktree.md - Finalization with git worktree support
 #   ├── finalize.md          - Standard finalization prompt
-#   ├── batch-plan.md.template     - Batch mode planning (requires $batch_size)
+#   ├── batch-plan.md.template     - Batch mode planning (requires $BJN_BJN_BATCH_SIZE)
 #   ├── batch-execute.md           - Batch mode execution
 #   ├── batch-review.md            - Batch mode review
 #   ├── batch-fix.md               - Batch mode fixing
-#   ├── dockerfile.template        - Dockerfile generation (requires $base_image)
-#   └── verbose-rules.template     - Verbose output rules (requires $BJARNE_TMP_DIR)
+#   ├── dockerfile.template        - Dockerfile generation (requires $BJN_base_image)
+#   └── verbose-rules.template     - Verbose output rules (requires $BJN_BJARNE_TMP_DIR)
 #
 # File Naming Conventions:
 #   - *.md files: Static prompts loaded as-is
@@ -348,11 +349,11 @@ load_prompt() {
 # Usage: load_prompt_with_subst <template_file> [variables_to_substitute]
 # Args:
 #   template_file: Can be relative (e.g., "dockerfile.template") or absolute path
-#   variables_to_substitute: Optional list of variables to substitute (e.g., "$base_image")
+#   variables_to_substitute: Optional list of variables to substitute (e.g., "$BJN_base_image")
 # Returns: 0 on success, 1 if file not found
 # Examples:
 #   load_prompt_with_subst "dockerfile.template"              # substitute all env vars
-#   load_prompt_with_subst "dockerfile.template" "$base_image" # only substitute $base_image
+#   load_prompt_with_subst "dockerfile.template" '$BJN_base_image' # only substitute $BJN_base_image
 # Note: Relative paths are resolved relative to $PROMPTS_DIR
 load_prompt_with_subst() {
     local template_file="$1"
@@ -397,7 +398,7 @@ FIX_PROMPT=$(load_prompt "fix.md")
 
 # Generate verbose output rules with current temp folder path
 get_verbose_output_rules() {
-    load_prompt_with_subst "verbose-rules.template" '$BJARNE_TMP_DIR'
+    load_prompt_with_subst "verbose-rules.template"
 }
 
 #==============================================================================
@@ -444,7 +445,7 @@ build_docker_image() {
 }
 
 # Get appropriate Docker base image for detected tech stack
-get_base_image() {
+get_BJN_base_image() {
     if [[ -f "package.json" ]]; then
         echo "node:22-bookworm"
     elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
@@ -484,13 +485,13 @@ get_dep_volume() {
 
 # Generate Dockerfile for safe mode
 generate_dockerfile() {
-    local base_image=$(get_base_image)
+    local BJN_base_image=$(get_BJN_base_image)
 
     mkdir -p "$BJARNE_DIR"
 
-    load_prompt_with_subst "dockerfile.template" '$base_image' > "$DOCKERFILE"
+    load_prompt_with_subst "dockerfile.template" > "$DOCKERFILE"
 
-    echo -e "  - Generated $DOCKERFILE (base: $base_image)"
+    echo -e "  - Generated $DOCKERFILE (base: $BJN_base_image)"
 }
 
 #==============================================================================
@@ -591,7 +592,7 @@ $(get_verbose_output_rules)"
             fi
 
             # Mount temp folder for verbose output logs (same path inside container)
-            docker_args+=" -v $BJARNE_TMP_DIR:$BJARNE_TMP_DIR"
+            docker_args+=" -v $BJN_BJARNE_TMP_DIR:$BJN_BJARNE_TMP_DIR"
 
             # Run with tee for real-time output to both screen and file
             docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
@@ -1306,7 +1307,7 @@ $FIX_PROMPT" "TASK_FIX"; then
 
     # Build finalize prompt - different based on worktree mode
     if [[ -n "$WORKTREE_PATH" ]]; then
-        FINALIZE_PROMPT=$(load_prompt_with_subst "finalize-worktree.md" "\$WORKTREE_BRANCH")
+        FINALIZE_PROMPT=$(load_prompt_with_subst "finalize-worktree.md" )
     else
         FINALIZE_PROMPT=$(load_prompt "finalize.md")
     fi
@@ -1368,14 +1369,15 @@ fi
 # Parse main loop arguments
 MAX_ITERATIONS=25
 BATCH_MODE=false
-BATCH_SIZE=5
+BJN_BATCH_SIZE=5
+export BJN_BATCH_SIZE
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --batch=*)
             # --batch=N syntax: batch mode with custom size
             BATCH_MODE=true
-            BATCH_SIZE="${1#--batch=}"
+            BJN_BATCH_SIZE="${1#--batch=}"
             shift
             ;;
         --batch)
@@ -1386,13 +1388,13 @@ while [[ $# -gt 0 ]]; do
         -b=*)
             # -b=N syntax: batch mode with custom size
             BATCH_MODE=true
-            BATCH_SIZE="${1#-b=}"
+            BJN_BATCH_SIZE="${1#-b=}"
             shift
             ;;
         -b[0-9]*)
             # -bN syntax (no space): batch mode with custom size
             BATCH_MODE=true
-            BATCH_SIZE="${1#-b}"
+            BJN_BATCH_SIZE="${1#-b}"
             shift
             ;;
         -b)
@@ -1453,12 +1455,12 @@ fi
 
 # Log session start
 log "INFO" "=== Bjarne session started ==="
-log "INFO" "Max iterations: $MAX_ITERATIONS, Safe mode: $SAFE_MODE, Batch mode: $BATCH_MODE (size: $BATCH_SIZE)"
+log "INFO" "Max iterations: $MAX_ITERATIONS, Safe mode: $SAFE_MODE, Batch mode: $BATCH_MODE (size: $BJN_BATCH_SIZE)"
 log "INFO" "Working directory: $(pwd)"
 
 echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
 if [[ "$BATCH_MODE" == true ]]; then
-    echo -e "${CYAN}批量模式: 每轮最多处理 $BATCH_SIZE 个相关任务${NC}"
+    echo -e "${CYAN}批量模式: 每轮最多处理 $BJN_BATCH_SIZE 个相关任务${NC}"
 fi
 echo -e "${CYAN}循环: 规划 → 执行 → 评审 → 修复${NC}"
 echo -e "${CYAN}日志: $LOG_FILE${NC}"
@@ -1480,7 +1482,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # Select prompts based on batch mode
     if [[ "$BATCH_MODE" == true ]]; then
-        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" '$BATCH_SIZE')
+        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" )
         ACTIVE_EXECUTE_PROMPT=$(load_prompt "batch-execute.md")
         ACTIVE_REVIEW_PROMPT=$(load_prompt "batch-review.md")
         ACTIVE_FIX_PROMPT=$(load_prompt "batch-fix.md")

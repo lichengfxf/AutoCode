@@ -3,7 +3,7 @@
 
 **你必须遵循这些规则。无例外。**
 
-**本次会话的日志文件夹**: $BJARNE_TMP_DIR
+**本次会话的日志文件夹**: $BJN_BJARNE_TMP_DIR
 
 ### 强制重定向 - 你必须重定向这些命令:
 - **包管理器**: npm, yarn, pnpm, pip, pip3, cargo, go get/build, composer, bundle, maven, gradle, apt, brew
@@ -16,11 +16,11 @@
 ### 必需模式 - 使用此确切格式:
 \`\`\`bash
 # 正确 - 重定向并显示退出码:
-npm install > $BJARNE_TMP_DIR/install.log 2>&1; echo "Exit code: \$?"
-npm test > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
-npm run build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
-cargo build > $BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
-pytest > $BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
+npm install > $BJN_BJARNE_TMP_DIR/install.log 2>&1; echo "Exit code: \$?"
+npm test > $BJN_BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
+npm run build > $BJN_BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
+cargo build > $BJN_BJARNE_TMP_DIR/build.log 2>&1; echo "Exit code: \$?"
+pytest > $BJN_BJARNE_TMP_DIR/test.log 2>&1; echo "Exit code: \$?"
 
 # 错误 - 绝不要这样做:
 npm install          # 禁止
@@ -31,10 +31,10 @@ cargo build          # 禁止
 ### 运行后，使用以下命令检查结果:
 \`\`\`bash
 # 如果退出码为 0，检查最后几行以确认:
-tail -20 $BJARNE_TMP_DIR/test.log
+tail -20 $BJN_BJARNE_TMP_DIR/test.log
 
 # 如果退出码非 0，查找错误:
-grep -i "error\|fail\|exception" $BJARNE_TMP_DIR/test.log | head -30
+grep -i "error\|fail\|exception" $BJN_BJARNE_TMP_DIR/test.log | head -30
 \`\`\`
 
 ### 不需要重定向的命令:

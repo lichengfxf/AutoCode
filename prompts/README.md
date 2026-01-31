@@ -15,12 +15,12 @@ prompts/
 ├── decompose.md               # Task decomposition prompt
 ├── finalize-worktree.md       # Finalization with git worktree support
 ├── finalize.md                # Standard finalization prompt
-├── batch-plan.md.template     # Batch mode planning (requires $batch_size)
+├── batch-plan.md.template     # Batch mode planning (requires $BJN_BATCH_SIZE)
 ├── batch-execute.md           # Batch mode execution
 ├── batch-review.md            # Batch mode review
 ├── batch-fix.md               # Batch mode fixing
-├── dockerfile.template        # Dockerfile generation (requires $base_image)
-└── verbose-rules.template     # Verbose output rules (requires $BJARNE_TMP_DIR)
+├── dockerfile.template        # Dockerfile generation (requires $BJN_base_image)
+└── verbose-rules.template     # Verbose output rules (requires $BJN_BJARNE_TMP_DIR)
 ```
 
 ## File Types
@@ -65,7 +65,7 @@ Template files contain variable placeholders that get substituted at runtime. Va
 
 | File | Purpose | When Used | Variables |
 |------|---------|-----------|-----------|
-| `batch-plan.md.template` | Batch planning | First step in batch mode | `$batch_size` |
+| `batch-plan.md.template` | Batch planning | First step in batch mode | `$BJN_BATCH_SIZE` |
 | `batch-execute.md` | Batch execution | Second step in batch mode | None |
 | `batch-review.md` | Batch review | Third step in batch mode | None |
 | `batch-fix.md` | Batch fixing | Fourth step in batch mode | None |
@@ -74,8 +74,8 @@ Template files contain variable placeholders that get substituted at runtime. Va
 
 | File | Purpose | When Used | Variables |
 |------|---------|-----------|-----------|
-| `dockerfile.template` | Docker environment setup | Safe mode container creation | `$base_image` |
-| `verbose-rules.template` | Verbose output rules | Debug mode | `$BJARNE_TMP_DIR` |
+| `dockerfile.template` | Docker environment setup | Safe mode container creation | `$BJN_base_image` |
+| `verbose-rules.template` | Verbose output rules | Debug mode | `$BJN_BJARNE_TMP_DIR` |
 
 ## Usage Guidelines
 
@@ -95,7 +95,7 @@ PLAN_PROMPT=$(load_prompt "plan.md")
 #### 2. `load_prompt_with_subst()` - For Template Files
 ```bash
 # Load template with specific variable substitution
-DOCKERFILE=$(load_prompt_with_subst "dockerfile.template" '$base_image')
+DOCKERFILE=$(load_prompt_with_subst "dockerfile.template" '$BJN_base_image')
 
 # Load template with all environment variables
 FULL_CONTENT=$(load_prompt_with_subst "batch-plan.md.template")
