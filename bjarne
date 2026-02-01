@@ -539,9 +539,7 @@ run_claude() {
     local output=""
 
     # 将详细输出规则附加到所有提示词（在末尾 = 更显眼）
-    local prompt="$user_prompt
-
-$(get_verbose_output_rules)"
+    local prompt="$user_prompt"
     local prompt_size=${#prompt}
 
     log "INFO" "启动 $phase 阶段（提示词：$prompt_size 字节）"
@@ -689,74 +687,9 @@ if [[ "$1" == "init" ]]; then
         exit 1
     fi
 
-    # 检测这是否是现有项目（有源代码文件）
-    EXISTING_PROJECT="false"
-    SRC_FILES=$(find . -maxdepth 3 -type f \( -name "*.cpp" -name "*.h" -name "*.c" -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.php" -o -name "*.go" -o -name "*.rs" -o -name "*.java" -o -name "*.tsx" -o -name "*.jsx" \) 2>/dev/null | grep -v node_modules | grep -v vendor | grep -v __pycache__ | head -20)
-    [[ -n "$SRC_FILES" ]] && EXISTING_PROJECT="true"
-
-    if [[ "$EXISTING_PROJECT" == "true" ]]; then
-        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化现有项目${NC}"
-    else
-        echo -e "${CYAN}Bjarne 正在从 $IDEA_FILE 初始化新项目${NC}"
-    fi
-
-    # 检测现有环境
-    DETECTED=""
-    [[ -f "package.json" ]] && DETECTED="${DETECTED}找到: package.json (Node.js/JavaScript)\n"
-    [[ -f "tsconfig.json" ]] && DETECTED="${DETECTED}找到: tsconfig.json (TypeScript)\n"
-    [[ -f "composer.json" ]] && DETECTED="${DETECTED}找到: composer.json (PHP)\n"
-    [[ -f "requirements.txt" ]] && DETECTED="${DETECTED}找到: requirements.txt (Python)\n"
-    [[ -f "pyproject.toml" ]] && DETECTED="${DETECTED}找到: pyproject.toml (Python)\n"
-    [[ -f "pubspec.yaml" ]] && DETECTED="${DETECTED}找到: pubspec.yaml (Flutter/Dart)\n"
-    [[ -f "Cargo.toml" ]] && DETECTED="${DETECTED}找到: Cargo.toml (Rust)\n"
-    [[ -f "go.mod" ]] && DETECTED="${DETECTED}找到: go.mod (Go)\n"
-    [[ -f "CLAUDE.md" ]] && DETECTED="${DETECTED}找到: CLAUDE.md (现有项目规则)\n"
-    [[ -f ".env.example" ]] && DETECTED="${DETECTED}找到: .env.example (需要 .env 设置)\n"
-    [[ -d "node_modules" ]] || [[ -f "package.json" ]] && [[ ! -d "node_modules" ]] && DETECTED="${DETECTED}注意: 缺少 node_modules - 需要 npm install\n"
-    [[ -d "vendor" ]] || [[ -f "composer.json" ]] && [[ ! -d "vendor" ]] && DETECTED="${DETECTED}注意: 缺少 vendor - 需要 composer install\n"
-
-    # 对于现有项目，包含源文件列表
-    EXISTING_CODE_INFO=""
-    if [[ "$EXISTING_PROJECT" == "true" ]]; then
-        EXISTING_CODE_INFO="
-## 现有源文件（探索这些以了解已构建的内容）:
-$SRC_FILES
-
-这是一个现有项目。你必须：
-1. 探索并理解现有代码库结构
-2. 阅读关键文件以了解已实现的内容
-3. 在 CONTEXT.md 中记录现有功能
-4. 创建在现有代码基础上构建的任务，而不是重复它
-"
-    fi
-
     INIT_PROMPT=$(load_prompt "init.md")
 
-    IDEA_CONTENT=$(cat "$IDEA_FILE")
-
-    # 读取 CLAUDE.md（如果存在）
-    CLAUDE_MD=""
-    if [[ -f "CLAUDE.md" ]]; then
-        CLAUDE_MD="
-
-## 现有的 CLAUDE.md (需要遵守的项目规则):
-$(cat CLAUDE.md)
-"
-    fi
-
-    run_claude "# 想法文件内容:
-
-$IDEA_CONTENT
-
----
-
-## 检测到的环境:
-$DETECTED
-$EXISTING_CODE_INFO
-$CLAUDE_MD
----
-
-$INIT_PROMPT" "INIT"
+    run_claude "$INIT_PROMPT" "INIT"
 
     # 验证文件是否已创建
     if [[ -f "$CONTEXT_FILE" ]] && [[ -f "$TASK_FILE" ]]; then
@@ -764,16 +697,6 @@ $INIT_PROMPT" "INIT"
         echo -e "  - $CONTEXT_FILE"
         echo -e "  - $TASK_FILE"
         [[ -d "$SPECS_DIR" ]] && echo -e "  - $SPECS_DIR/"
-
-        # 如果 git 可用且尚未在仓库中，则初始化 git 仓库
-        if command -v git &> /dev/null; then
-            if ! git rev-parse --git-dir &> /dev/null 2>&1; then
-                git init -q && \
-                git add -A && \
-                git commit -q -m "Initial project setup by Bjarne" && \
-                echo -e "  - git repo initialized" || true
-            fi
-        fi
 
         # 如果使用了 --safe 标志，则生成 Docker 配置
         if [[ "$INIT_SAFE_MODE" == true ]]; then
