@@ -63,11 +63,17 @@ NC='\033[0m'
 TASK_FILE="TASKS.md"
 CONTEXT_FILE="CONTEXT.md"
 SPECS_DIR="specs"
-TASK_STATE=".task"
+TASK_STATE="bjn_task.plan"
+TASK_STATE_PLAN="bjn_task.plan"
+TASK_STATE_REVIEW="bjn_task.review"
 
 # 重试设置
 MAX_RETRIES=5
 RETRY_DELAY=10
+
+# 超时设置（秒），0 表示不限制
+CLAUDE_TIMEOUT=0
+CLAUDE_TIMEOUT_SIGNAL=TERM  # 超时后发送的信号：TERM (15) 或 KILL (9)
 
 # 日志（使用绝对路径以在 worktree 切换后保持有效）
 BJARNE_PROJECT_ROOT="$(pwd)"
@@ -597,12 +603,12 @@ run_claude() {
             # 使用 tee 运行，实时输出到屏幕和文件
             docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
                 $docker_args -w /workspace "$IMAGE_NAME" \
-                claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+                claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
             # 从管道获取退出码（使用 PIPESTATUS）
             exit_code=${PIPESTATUS[0]}
         else
             # 在主机上使用 tee 运行，实时输出
-            claude -p --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
             # 从管道获取退出码
             exit_code=${PIPESTATUS[0]}
         fi
@@ -775,33 +781,11 @@ if [[ "$1" == "refresh" ]]; then
     REFRESH_PROMPT=$(load_prompt "refresh.md")
 
     NOTES_CONTENT=$(cat "$NOTES_FILE")
-    CONTEXT_CONTENT=$(cat "$CONTEXT_FILE")
-    TASKS_CONTENT=$(cat "$TASK_FILE")
-
-    # 读取 CLAUDE.md（如果存在）
-    CLAUDE_MD=""
-    if [[ -f "CLAUDE.md" ]]; then
-        CLAUDE_MD="
-## 项目规则 (来自 CLAUDE.md):
-$(cat CLAUDE.md)
-"
-    fi
 
     run_claude "# 用户的笔记:
 
 $NOTES_CONTENT
 
----
-
-## 当前的 CONTEXT.md:
-$CONTEXT_CONTENT
-
----
-
-## 当前的 TASKS.md:
-$TASKS_CONTENT
-
-$CLAUDE_MD
 ---
 
 $REFRESH_PROMPT" "REFRESH"
@@ -1410,8 +1394,8 @@ for i in $(seq 1 $MAX_ITERATIONS); do
         exit 1
     fi
 
-    if [[ ! -f "$TASK_STATE" ]]; then
-        echo -e "${RED}规划失败 - 未找到 .task 文件${NC}"
+    if [[ ! -f "$TASK_STATE_PLAN" ]]; then
+        echo -e "${RED}规划失败 - 未找到 $TASK_STATE_PLAN 文件${NC}"
         continue
     fi
 

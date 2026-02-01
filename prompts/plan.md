@@ -79,3 +79,7 @@ TEST_COMMAND: [来自 CONTEXT.md 或检测到的命令]
 OUTCOME_VERIFICATION:
 - [具体检查以确认结果，例如 "grep 查找带 href=/login 的按钮"]
 ```
+
+记住：开发、测试过程中都没有人工干预，例如
+- 不要让用户按 Ctrl+C，你需要使用kill模拟
+- 不要调用会一直阻塞的命令
