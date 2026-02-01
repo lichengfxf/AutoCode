@@ -375,38 +375,6 @@ get_verbose_output_rules() {
     load_prompt_with_subst "verbose-rules.template"
 }
 
-#==============================================================================
-# Git/GH 检测功能
-#==============================================================================
-
-# 检测 git 是否可用以及我们是否在仓库中
-detect_git() {
-    if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
-        echo "1"
-    else
-        echo "0"
-    fi
-}
-
-# 检测 gh CLI 是否可用并已认证
-detect_gh() {
-    if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
-        echo "1"
-    else
-        echo "0"
-    fi
-}
-
-# 从描述生成任务 ID（仅使用第一行作为 slug）
-generate_task_id() {
-    local description="$1"
-    local timestamp=$(date +%s)
-    # 仅使用第一个非空行作为 slug（处理多行 markdown）
-    local first_line=$(echo "$description" | grep -v '^#' | grep -v '^$' | head -1)
-    local slug=$(echo "$first_line" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-30)
-    echo "${timestamp}-${slug}"
-}
-
 # 检测 jq 是否可用
 HAS_JQ=0
 if command -v jq &>/dev/null; then
