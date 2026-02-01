@@ -12,6 +12,8 @@
 # 主循环选项：
 #   -p <phase>          - 从指定阶段开始 (plan|exec|review|fix)
 #                         用于任务中断后恢复，避免从头开始
+#   -t <pattern>        - 从匹配指定关键词/正则表达式的未完成任务开始
+#                         例如: -t "数据库" 或 -t "API.*设计"
 #
 # 循环：规划 → 执行 → 评审 → 修复
 #
@@ -618,6 +620,7 @@ fi
 # 解析主循环参数
 MAX_ITERATIONS=25
 START_PHASE="plan"  # 默认从 plan 开始，可选: plan, exec, review, fix
+TASK_PATTERN=""     # 任务匹配模式（关键词或正则表达式）
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -636,6 +639,15 @@ while [[ $# -gt 0 ]]; do
                     ;;
             esac
             ;;
+        -t)
+            # 指定任务匹配模式
+            TASK_PATTERN="$2"
+            shift 2
+            if [[ -z "$TASK_PATTERN" ]]; then
+                echo -e "${RED}错误: -t 需要指定匹配模式${NC}"
+                exit 1
+            fi
+            ;;
         [0-9]*)
             MAX_ITERATIONS="$1"
             shift
@@ -645,6 +657,7 @@ while [[ $# -gt 0 ]]; do
             echo "用法: bjarne [options] [iterations]"
             echo "选项:"
             echo "  -p <phase>    从指定阶段开始 (plan|exec|review|fix)"
+            echo "  -t <pattern>  从匹配指定模式的任务开始"
             exit 1
             ;;
     esac
@@ -670,6 +683,9 @@ echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
 if [[ "$START_PHASE" != "plan" ]]; then
     echo -e "${CYAN}从 ${START_PHASE} 阶段开始${NC}"
 fi
+if [[ -n "$TASK_PATTERN" ]]; then
+    echo -e "${CYAN}从匹配 \"$TASK_PATTERN\" 的任务开始${NC}"
+fi
 echo -e "${CYAN}循环: 规划 → 执行 → 评审 → 修复${NC}"
 echo -e "${CYAN}日志: $LOG_FILE${NC}"
 echo ""
@@ -688,9 +704,23 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     # PLAN (如果从 plan 或更早阶段开始)
     if [[ "$START_PHASE" == "plan" ]]; then
         echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
+
+        # 如果指定了任务匹配模式，导出环境变量供提示词使用
+        if [[ -n "$TASK_PATTERN" ]]; then
+            export BJN_TASK_PATTERN="$TASK_PATTERN"
+        else
+            unset BJN_TASK_PATTERN 2>/dev/null || true
+        fi
+
         if ! run_claude "$PLAN_PROMPT" "PLAN"; then
             echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
             exit 1
+        fi
+
+        # 首次使用后清除任务模式（后续轮次按正常顺序）
+        if [[ -n "$TASK_PATTERN" ]]; then
+            unset BJN_TASK_PATTERN 2>/dev/null || true
+            TASK_PATTERN=""
         fi
 
         if [[ ! -f "$TASK_STATE_PLAN" ]]; then
