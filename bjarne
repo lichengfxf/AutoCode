@@ -547,28 +547,35 @@ process_json_stream() {
     while IFS= read -r line; do
         if [[ -n "$line" ]]; then
             if [[ "$HAS_JQ" == "1" ]]; then
-                # 尝试用 jq 提取文本内容或格式化 JSON
+                # 尝试用 jq 提取 content 数组中的数据
                 echo "$line" | jq -r '
-                    if .type == "text" then
+                    if .content and (.content | type) == "array" then
+                        .content[] |
+                            if .type == "text" then
+                                .text
+                            elif .type == "tool_use" then
+                                if .name == "Bash" then
+                                    "\n[Bash] \(.input.command // "")"
+                                elif .name == "Read" then
+                                    "\n[Read] \(.input.file_path // "")"
+                                elif .name == "Write" or .name == "Edit" then
+                                    "\n[\(.name)] \(.input.file_path // "")"
+                                else
+                                    "\n[\(.name)]"
+                                end
+                            else
+                                empty
+                            end
+                    elif .type == "text" then
                         .text
                     elif .type == "error" then
                         "ERROR: \(.error.message // .error)"
-                    elif .type == "tool_use" then
-                        if .name == "Bash" then
-                            "\n\(.name): \(.input.command // "")"
-                        elif .name == "Read" then
-                            "\n\(.name): \(.input.file_path // "")"
-                        elif .name == "Write" or .name == "Edit" then
-                            "\n\(.name): \(.input.file_path // "")"
-                        else
-                            "\n\(.name)"
-                        end
                     elif .text then
                         .text
                     else
-                        .
+                        empty
                     end
-                ' 2>/dev/null || echo "$line"
+                ' 2>/dev/null
             else
                 echo "$line"
             fi
