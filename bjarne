@@ -11,9 +11,6 @@
 #   bjarne --enable-auto-update     - 重新启用自动更新检查
 #
 # 主循环选项：
-#   --batch             - 启用批量模式（每次最多处理 5 个相关任务）
-#   --batch=N, -bN      - 启用批量模式并指定自定义大小（最多 N 个任务）
-#                         任务按自然关联性分组，而非强制分组
 #   -p <phase>          - 从指定阶段开始 (plan|exec|review|fix)
 #                         用于任务中断后恢复，避免从头开始
 #
@@ -291,10 +288,6 @@ IMAGE_NAME=""
 #   ├── decompose.md         - 任务分解提示词
 #   ├── finalize-worktree.md - 支持 git worktree 的最终化
 #   ├── finalize.md          - 标准最终化提示词
-#   ├── batch-plan.md.template     - 批量模式规划（需要 $BJN_BJN_BATCH_SIZE）
-#   ├── batch-execute.md           - 批量模式执行
-#   ├── batch-review.md            - 批量模式评审
-#   ├── batch-fix.md               - 批量模式修复
 #   ├── dockerfile.template        - Dockerfile 生成（需要 $BJN_base_image）
 #   └── verbose-rules.template     - 详细输出规则（需要 $BJN_BJARNE_TMP_DIR）
 #
@@ -850,41 +843,10 @@ fi
 
 # 解析主循环参数
 MAX_ITERATIONS=25
-BATCH_MODE=false
-BJN_BATCH_SIZE=5
-export BJN_BATCH_SIZE
 START_PHASE="plan"  # 默认从 plan 开始，可选: plan, exec, review, fix
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --batch=*)
-            # --batch=N 语法：带自定义大小的批量模式
-            BATCH_MODE=true
-            BJN_BATCH_SIZE="${1#--batch=}"
-            shift
-            ;;
-        --batch)
-            # 仅 --batch：带默认大小的批量模式
-            BATCH_MODE=true
-            shift
-            ;;
-        -b=*)
-            # -b=N 语法：带自定义大小的批量模式
-            BATCH_MODE=true
-            BJN_BATCH_SIZE="${1#-b=}"
-            shift
-            ;;
-        -b[0-9]*)
-            # -bN 语法（无空格）：带自定义大小的批量模式
-            BATCH_MODE=true
-            BJN_BATCH_SIZE="${1#-b}"
-            shift
-            ;;
-        -b)
-            # 仅 -b：带默认大小的批量模式
-            BATCH_MODE=true
-            shift
-            ;;
         -p)
             # 指定起始阶段
             START_PHASE="$2"
@@ -908,9 +870,6 @@ while [[ $# -gt 0 ]]; do
             echo -e "${RED}未知选项: $1${NC}"
             echo "用法: bjarne [options] [iterations]"
             echo "选项:"
-            echo "  --batch       启用批量模式 (最多 5 个相关任务)"
-            echo "  --batch=N     启用批量模式并指定数量"
-            echo "  -b, -bN       --batch 和 --batch=N 的简写"
             echo "  -p <phase>    从指定阶段开始 (plan|exec|review|fix)"
             exit 1
             ;;
@@ -938,13 +897,10 @@ fi
 
 # 记录会话开始
 log "INFO" "=== Bjarne 会话开始 ==="
-log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 批量模式: $BATCH_MODE (大小: $BJN_BATCH_SIZE), 起始阶段: $START_PHASE"
+log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 起始阶段: $START_PHASE"
 log "INFO" "工作目录: $(pwd)"
 
 echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
-if [[ "$BATCH_MODE" == true ]]; then
-    echo -e "${CYAN}批量模式: 每轮最多处理 $BJN_BATCH_SIZE 个相关任务${NC}"
-fi
 if [[ "$START_PHASE" != "plan" ]]; then
     echo -e "${CYAN}从 ${START_PHASE} 阶段开始${NC}"
 fi
@@ -963,23 +919,10 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     REMAINING=$(grep -c '^\s*- \[ \]' "$TASK_FILE" || echo "0")
     echo -e "${YELLOW}=== 第 $i/$MAX_ITERATIONS 轮 (剩余 $REMAINING 个任务) ===${NC}"
 
-    # 根据批量模式选择提示词
-    if [[ "$BATCH_MODE" == true ]]; then
-        ACTIVE_PLAN_PROMPT=$(load_prompt_with_subst "batch-plan.md.template" )
-        ACTIVE_EXECUTE_PROMPT=$(load_prompt "batch-execute.md")
-        ACTIVE_REVIEW_PROMPT=$(load_prompt "batch-review.md")
-        ACTIVE_FIX_PROMPT=$(load_prompt "batch-fix.md")
-    else
-        ACTIVE_PLAN_PROMPT="$PLAN_PROMPT"
-        ACTIVE_EXECUTE_PROMPT="$EXECUTE_PROMPT"
-        ACTIVE_REVIEW_PROMPT="$REVIEW_PROMPT"
-        ACTIVE_FIX_PROMPT="$FIX_PROMPT"
-    fi
-
     # PLAN (如果从 plan 或更早阶段开始)
     if [[ "$START_PHASE" == "plan" ]]; then
         echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
-        if ! run_claude "$ACTIVE_PLAN_PROMPT" "PLAN"; then
+        if ! run_claude "$PLAN_PROMPT" "PLAN"; then
             echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
             exit 1
         fi
@@ -993,7 +936,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     # EXECUTE (如果从 exec 或更早阶段开始)
     if [[ "$START_PHASE" == "plan" ]] || [[ "$START_PHASE" == "exec" ]]; then
         echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
-        if ! run_claude "$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
+        if ! run_claude "$EXECUTE_PROMPT" "EXECUTE"; then
             echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
             exit 1
         fi
@@ -1002,7 +945,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     # REVIEW (如果从 review 或更早阶段开始)
     if [[ "$START_PHASE" == "plan" ]] || [[ "$START_PHASE" == "exec" ]] || [[ "$START_PHASE" == "review" ]]; then
         echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
-        if ! run_claude "$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
+        if ! run_claude "$REVIEW_PROMPT" "REVIEW"; then
             echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
             exit 1
         fi
@@ -1010,7 +953,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # FIX (始终执行，除非是只读模式)
     echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
-    if ! run_claude "$ACTIVE_FIX_PROMPT" "FIX"; then
+    if ! run_claude "$FIX_PROMPT" "FIX"; then
         echo -e "${RED}修复阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
