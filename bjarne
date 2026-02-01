@@ -1431,22 +1431,6 @@ if [[ ! -f "$CONTEXT_FILE" ]]; then
     echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
 fi
 
-
-# 每次迭代重新加载上下文
-load_context() {
-    CONTEXT=""
-    if [[ -f "$CONTEXT_FILE" ]]; then
-        CONTEXT+=$(cat "$CONTEXT_FILE")
-    fi
-    # 如果存在，也包含 CLAUDE.md（项目规则）
-    if [[ -f "CLAUDE.md" ]]; then
-        CONTEXT="$CONTEXT
-
-## 项目规则 (来自 CLAUDE.md):
-$(cat CLAUDE.md)"
-    fi
-}
-
 # 检测并设置安全模式（如果适用）
 detect_safe_mode
 if [[ "$SAFE_MODE" == true ]]; then
@@ -1469,9 +1453,6 @@ echo -e "${CYAN}日志: $LOG_FILE${NC}"
 echo ""
 
 for i in $(seq 1 $MAX_ITERATIONS); do
-    # 每次迭代重新加载上下文
-    load_context
-
     # 检查剩余任务
     if ! grep -q '^\s*- \[ \]' "$TASK_FILE"; then
         echo -e "${GREEN}所有任务已完成!${NC}"
@@ -1509,27 +1490,21 @@ for i in $(seq 1 $MAX_ITERATIONS); do
 
     # EXECUTE
     echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
-    if ! run_claude "$CONTEXT
-
-$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
+    if ! run_claude "$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
         echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     # REVIEW
     echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
-    if ! run_claude "$CONTEXT
-
-$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
+    if ! run_claude "$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
         echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
 
     # FIX
     echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
-    if ! run_claude "$CONTEXT
-
-$ACTIVE_FIX_PROMPT" "FIX"; then
+    if ! run_claude "$ACTIVE_FIX_PROMPT" "FIX"; then
         echo -e "${RED}修复阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
     fi
