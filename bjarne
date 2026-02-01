@@ -2,7 +2,7 @@
 # Bjarne - 自主 AI 开发系统
 #
 # 命令：
-#   bjarne init [--safe] <idea.md>  - 从一个想法文件，初始化项目
+#   bjarne init [--safe]            - 从 idea.md 文件初始化项目
 #   bjarne refresh <notes.md>       - 用一个自由格式笔记，添加任务到现有项目
 #   bjarne task [opts] "desc"       - 运行项目中的一个单独的任务
 #   bjarne [opts] [n]               - 运行 n 次迭代（默认 25 次）
@@ -657,9 +657,9 @@ $(get_verbose_output_rules)"
 # INIT 命令 - 从想法文件引导项目（适用于新项目或现有项目）
 #==============================================================================
 if [[ "$1" == "init" ]]; then
-    # 解析 --safe 标志和想法文件
+    # 解析 --safe 标志（固定使用 idea.md 文件）
     INIT_SAFE_MODE=false
-    IDEA_FILE=""
+    IDEA_FILE="idea.md"
 
     shift  # 从参数中删除 "init"
     while [[ $# -gt 0 ]]; do
@@ -669,19 +669,23 @@ if [[ "$1" == "init" ]]; then
                 shift
                 ;;
             *)
-                IDEA_FILE="$1"
-                shift
+                echo -e "${RED}错误: 不支持的参数 '$1'${NC}"
+                echo -e "${YELLOW}用法: bjarne init [--safe]${NC}"
+                echo -e "${YELLOW}init 命令固定使用 idea.md 文件，无需指定文件名${NC}"
+                exit 1
                 ;;
         esac
     done
 
-    if [[ -z "$IDEA_FILE" ]]; then
-        echo -e "${RED}用法: bjarne init [--safe] <idea.md>${NC}"
-        exit 1
-    fi
-
     if [[ ! -f "$IDEA_FILE" ]]; then
-        echo -e "${RED}错误: 未找到 $IDEA_FILE${NC}"
+        echo -e "${RED}错误: 未找到 $IDEA_FILE 文件${NC}"
+        echo ""
+        echo -e "${CYAN}请先创建 idea.md 文件来描述你的项目想法${NC}"
+        echo -e "${YELLOW}示例:${NC}"
+        echo "  echo '# 我的项目想法' > idea.md"
+        echo "  或者使用你喜欢的编辑器创建 idea.md"
+        echo ""
+        echo -e "${YELLOW}然后运行: bjarne init [--safe]${NC}"
         exit 1
     fi
 
@@ -808,7 +812,7 @@ if [[ "$1" == "--rebuild" ]]; then
 
     if [[ "$SAFE_MODE" != true ]]; then
         echo -e "${RED}错误: 不是安全模式项目 (未找到 $DOCKERFILE)${NC}"
-        echo -e "运行 'bjarne init --safe <idea.md>' 启用安全模式"
+        echo -e "运行 'bjarne init --safe' 启用安全模式"
         exit 1
     fi
 
@@ -1423,7 +1427,7 @@ done
 # 检查必需文件
 if [[ ! -f "$TASK_FILE" ]]; then
     echo -e "${RED}错误: 未找到 $TASK_FILE${NC}"
-    echo -e "请先运行 'bjarne init <idea.md>'"
+    echo -e "请先运行 'bjarne init' (需要 idea.md 文件)"
     exit 1
 fi
 
