@@ -15,6 +15,8 @@
 #   --batch             - 启用批量模式（每次最多处理 5 个相关任务）
 #   --batch=N, -bN      - 启用批量模式并指定自定义大小（最多 N 个任务）
 #                         任务按自然关联性分组，而非强制分组
+#   -p <phase>          - 从指定阶段开始 (plan|exec|review|fix)
+#                         用于任务中断后恢复，避免从头开始
 #
 # task模式选项：
 #   --safe              - 在 Docker 容器中运行
@@ -812,6 +814,7 @@ if [[ "$1" == "task" ]]; then
     TASK_NO_PR=false
     TASK_NO_WORKTREE=false
     TASK_MAX_ITERATIONS=25
+    TASK_START_PHASE="plan"  # 默认从 plan 开始，可选: plan, exec, review, fix
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -831,6 +834,20 @@ if [[ "$1" == "task" ]]; then
                 TASK_MAX_ITERATIONS="$2"
                 shift 2
                 ;;
+            -p)
+                TASK_START_PHASE="$2"
+                shift 2
+                # 验证阶段名称
+                case "$TASK_START_PHASE" in
+                    plan|exec|review|fix)
+                        ;;
+                    *)
+                        echo -e "${RED}错误: 无效的阶段 '$TASK_START_PHASE'${NC}"
+                        echo -e "${YELLOW}有效阶段: plan, exec, review, fix${NC}"
+                        exit 1
+                        ;;
+                esac
+                ;;
             *)
                 # 假设它是任务描述（或文件路径）
                 TASK_DESCRIPTION="$1"
@@ -845,13 +862,21 @@ if [[ "$1" == "task" ]]; then
     fi
 
     if [[ -z "$TASK_DESCRIPTION" ]]; then
-        echo -e "${RED}用法: bjarne task [--safe] [--no-pr] [--no-worktree] [-n iterations] <description or file.md>${NC}"
+        echo -e "${RED}用法: bjarne task [opts] <description or file.md>${NC}"
+        echo ""
+        echo "选项:"
+        echo "  --safe              - 在 Docker 容器中运行"
+        echo "  --no-pr             - 跳过 PR 创建"
+        echo "  --no-worktree       - 在当前分支工作 (会影响其他会话)"
+        echo "  -n <num>            - 最大迭代次数（默认 25）"
+        echo "  -p <phase>          - 从指定阶段开始 (plan|exec|review|fix)"
         echo ""
         echo "示例:"
         echo "  bjarne task \"修复登录按钮无响应的问题\""
         echo "  bjarne task bugfix.md                      # 读取文件作为任务"
         echo "  bjarne task --safe \"添加支付集成\""
         echo "  bjarne task --no-worktree \"快速修复\"     # 在当前分支工作 (会影响其他会话)"
+        echo "  bjarne task -p exec \"继续执行中断的任务\"  # 从执行阶段开始"
         exit 1
     fi
 
@@ -878,6 +903,9 @@ if [[ "$1" == "task" ]]; then
     echo -e "  任务目录: $TASK_DIR"
     echo -e "  Git 可用: $([ \"$HAS_GIT\" == \"1\" ] && echo \"是\" || echo \"否\")"
     echo -e "  GitHub CLI: $([ \"$HAS_GH\" == \"1\" ] && echo \"是\" || echo \"否\")"
+    if [[ "$TASK_START_PHASE" != "plan" ]]; then
+        echo -e "  起始阶段: $TASK_START_PHASE"
+    fi
 
     # 任务专用日志函数
     task_log() {
@@ -1130,6 +1158,9 @@ EXPECTED_OUTCOMES:
 "
 
     echo -e "${CYAN}启动任务循环 - 最多 $TASK_MAX_ITERATIONS 轮${NC}"
+    if [[ "$TASK_START_PHASE" != "plan" ]]; then
+        echo -e "${CYAN}从 ${TASK_START_PHASE} 阶段开始${NC}"
+    fi
     echo ""
 
     for i in $(seq 1 $TASK_MAX_ITERATIONS); do
@@ -1147,52 +1178,58 @@ EXPECTED_OUTCOMES:
         # 构建此迭代的上下文（任务模式头部 + 项目上下文）
         ITER_CONTEXT="$TASK_MODE_HEADER$PROJECT_CONTEXT$SPECS_CONTENT$CLAUDE_MD_CONTENT"
 
-        # 规划（使用主 PLAN_PROMPT 和任务上下文）
-        echo -e "${BLUE}[1/4 规划]${NC} 分析子任务..."
-        task_log "INFO" "[规划] 开始..."
-        if ! run_claude "$ITER_CONTEXT
+        # 规划（使用主 PLAN_PROMPT 和任务上下文）- 如果从 plan 或更早阶段开始
+        if [[ "$TASK_START_PHASE" == "plan" ]]; then
+            echo -e "${BLUE}[1/4 规划]${NC} 分析子任务..."
+            task_log "INFO" "[规划] 开始..."
+            if ! run_claude "$ITER_CONTEXT
 
 $PLAN_PROMPT" "TASK_PLAN"; then
-            echo -e "${RED}规划阶段失败 - 中止${NC}"
-            task_log "ERROR" "[规划] 失败 - 中止"
-            break
+                echo -e "${RED}规划阶段失败 - 中止${NC}"
+                task_log "ERROR" "[规划] 失败 - 中止"
+                break
+            fi
+
+            if [[ ! -f "$TASK_STATE_FILE" ]]; then
+                echo -e "${RED}规划失败 - 未创建 .task 文件${NC}"
+                task_log "ERROR" "[规划] 未创建 .task 文件"
+                continue
+            fi
+
+            # 记录正在处理的任务
+            CURRENT_TASKS=$(grep -E '^TASK:|^TASKS:' "$TASK_STATE_FILE" 2>/dev/null | head -3)
+            task_log "INFO" "[规划] 工作中: $CURRENT_TASKS"
         fi
 
-        if [[ ! -f "$TASK_STATE_FILE" ]]; then
-            echo -e "${RED}规划失败 - 未创建 .task 文件${NC}"
-            task_log "ERROR" "[规划] 未创建 .task 文件"
-            continue
-        fi
-
-        # 记录正在处理的任务
-        CURRENT_TASKS=$(grep -E '^TASK:|^TASKS:' "$TASK_STATE_FILE" 2>/dev/null | head -3)
-        task_log "INFO" "[规划] 工作中: $CURRENT_TASKS"
-
-        # 执行（使用主 EXECUTE_PROMPT 和任务上下文）
-        echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
-        task_log "INFO" "[执行] 开始..."
-        if ! run_claude "$ITER_CONTEXT
+        # 执行（使用主 EXECUTE_PROMPT 和任务上下文）- 如果从 exec 或更早阶段开始
+        if [[ "$TASK_START_PHASE" == "plan" ]] || [[ "$TASK_START_PHASE" == "exec" ]]; then
+            echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
+            task_log "INFO" "[执行] 开始..."
+            if ! run_claude "$ITER_CONTEXT
 
 $EXECUTE_PROMPT" "TASK_EXECUTE"; then
-            echo -e "${RED}执行阶段失败 - 中止${NC}"
-            task_log "ERROR" "[执行] 失败 - 中止"
-            break
+                echo -e "${RED}执行阶段失败 - 中止${NC}"
+                task_log "ERROR" "[执行] 失败 - 中止"
+                break
+            fi
+            task_log "INFO" "[执行] 完成"
         fi
-        task_log "INFO" "[执行] 完成"
 
-        # 评审（使用主 REVIEW_PROMPT 和任务上下文）
-        echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
-        task_log "INFO" "[评审] 开始..."
-        if ! run_claude "$ITER_CONTEXT
+        # 评审（使用主 REVIEW_PROMPT 和任务上下文）- 如果从 review 或更早阶段开始
+        if [[ "$TASK_START_PHASE" == "plan" ]] || [[ "$TASK_START_PHASE" == "exec" ]] || [[ "$TASK_START_PHASE" == "review" ]]; then
+            echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
+            task_log "INFO" "[评审] 开始..."
+            if ! run_claude "$ITER_CONTEXT
 
 $REVIEW_PROMPT" "TASK_REVIEW"; then
-            echo -e "${RED}评审阶段失败 - 中止${NC}"
-            task_log "ERROR" "[评审] 失败 - 中止"
-            break
+                echo -e "${RED}评审阶段失败 - 中止${NC}"
+                task_log "ERROR" "[评审] 失败 - 中止"
+                break
+            fi
+            task_log "INFO" "[评审] 完成"
         fi
-        task_log "INFO" "[评审] 完成"
 
-        # 修复（使用主 FIX_PROMPT 和任务上下文）
+        # 修复（使用主 FIX_PROMPT 和任务上下文）- 始终执行
         echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
         task_log "INFO" "[修复] 开始..."
         if ! run_claude "$ITER_CONTEXT
@@ -1207,6 +1244,13 @@ $FIX_PROMPT" "TASK_FIX"; then
         # 记录完成数量
         COMPLETED_NOW=$(grep -c '^\s*- \[x\]' "$TASK_SUBTASKS" 2>/dev/null) || COMPLETED_NOW=0
         task_log "INFO" "第 $i 轮完成 - 目前已完成 $COMPLETED_NOW 个子任务"
+
+        # 第一轮后，重置起始阶段为 plan（正常循环）
+        if [[ "$i" == 1 ]] && [[ "$TASK_START_PHASE" != "plan" ]]; then
+            echo -e "${CYAN}恢复为完整循环（从 plan 开始）${NC}"
+            task_log "INFO" "重置起始阶段为 plan"
+            TASK_START_PHASE="plan"
+        fi
 
         sleep 2
     done
@@ -1284,6 +1328,7 @@ MAX_ITERATIONS=25
 BATCH_MODE=false
 BJN_BATCH_SIZE=5
 export BJN_BATCH_SIZE
+START_PHASE="plan"  # 默认从 plan 开始，可选: plan, exec, review, fix
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1315,6 +1360,21 @@ while [[ $# -gt 0 ]]; do
             BATCH_MODE=true
             shift
             ;;
+        -p)
+            # 指定起始阶段
+            START_PHASE="$2"
+            shift 2
+            # 验证阶段名称
+            case "$START_PHASE" in
+                plan|exec|review|fix)
+                    ;;
+                *)
+                    echo -e "${RED}错误: 无效的阶段 '$START_PHASE'${NC}"
+                    echo -e "${YELLOW}有效阶段: plan, exec, review, fix${NC}"
+                    exit 1
+                    ;;
+            esac
+            ;;
         [0-9]*)
             MAX_ITERATIONS="$1"
             shift
@@ -1326,6 +1386,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --batch       启用批量模式 (最多 5 个相关任务)"
             echo "  --batch=N     启用批量模式并指定数量"
             echo "  -b, -bN       --batch 和 --batch=N 的简写"
+            echo "  -p <phase>    从指定阶段开始 (plan|exec|review|fix)"
             exit 1
             ;;
     esac
@@ -1352,12 +1413,15 @@ fi
 
 # 记录会话开始
 log "INFO" "=== Bjarne 会话开始 ==="
-log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 批量模式: $BATCH_MODE (大小: $BJN_BATCH_SIZE)"
+log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 批量模式: $BATCH_MODE (大小: $BJN_BATCH_SIZE), 起始阶段: $START_PHASE"
 log "INFO" "工作目录: $(pwd)"
 
 echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
 if [[ "$BATCH_MODE" == true ]]; then
     echo -e "${CYAN}批量模式: 每轮最多处理 $BJN_BATCH_SIZE 个相关任务${NC}"
+fi
+if [[ "$START_PHASE" != "plan" ]]; then
+    echo -e "${CYAN}从 ${START_PHASE} 阶段开始${NC}"
 fi
 echo -e "${CYAN}循环: 规划 → 执行 → 评审 → 修复${NC}"
 echo -e "${CYAN}日志: $LOG_FILE${NC}"
@@ -1387,37 +1451,49 @@ for i in $(seq 1 $MAX_ITERATIONS); do
         ACTIVE_FIX_PROMPT="$FIX_PROMPT"
     fi
 
-    # PLAN
-    echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
-    if ! run_claude "$ACTIVE_PLAN_PROMPT" "PLAN"; then
-        echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
-        exit 1
+    # PLAN (如果从 plan 或更早阶段开始)
+    if [[ "$START_PHASE" == "plan" ]]; then
+        echo -e "${BLUE}[1/4 规划]${NC} 分析中..."
+        if ! run_claude "$ACTIVE_PLAN_PROMPT" "PLAN"; then
+            echo -e "${RED}规划阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+            exit 1
+        fi
+
+        if [[ ! -f "$TASK_STATE_PLAN" ]]; then
+            echo -e "${RED}规划失败 - 未找到 $TASK_STATE_PLAN 文件${NC}"
+            continue
+        fi
     fi
 
-    if [[ ! -f "$TASK_STATE_PLAN" ]]; then
-        echo -e "${RED}规划失败 - 未找到 $TASK_STATE_PLAN 文件${NC}"
-        continue
+    # EXECUTE (如果从 exec 或更早阶段开始)
+    if [[ "$START_PHASE" == "plan" ]] || [[ "$START_PHASE" == "exec" ]]; then
+        echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
+        if ! run_claude "$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
+            echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+            exit 1
+        fi
     fi
 
-    # EXECUTE
-    echo -e "${BLUE}[2/4 执行]${NC} 实现中..."
-    if ! run_claude "$ACTIVE_EXECUTE_PROMPT" "EXECUTE"; then
-        echo -e "${RED}执行阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
-        exit 1
+    # REVIEW (如果从 review 或更早阶段开始)
+    if [[ "$START_PHASE" == "plan" ]] || [[ "$START_PHASE" == "exec" ]] || [[ "$START_PHASE" == "review" ]]; then
+        echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
+        if ! run_claude "$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
+            echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
+            exit 1
+        fi
     fi
 
-    # REVIEW
-    echo -e "${BLUE}[3/4 评审]${NC} 评审中..."
-    if ! run_claude "$ACTIVE_REVIEW_PROMPT" "REVIEW"; then
-        echo -e "${RED}评审阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
-        exit 1
-    fi
-
-    # FIX
+    # FIX (始终执行，除非是只读模式)
     echo -e "${BLUE}[4/4 修复]${NC} 修复中..."
     if ! run_claude "$ACTIVE_FIX_PROMPT" "FIX"; then
         echo -e "${RED}修复阶段在 $MAX_RETRIES 次重试后失败 - 中止${NC}"
         exit 1
+    fi
+
+    # 第一轮后，重置起始阶段为 plan（正常循环）
+    if [[ "$i" == 1 ]] && [[ "$START_PHASE" != "plan" ]]; then
+        echo -e "${CYAN}恢复为完整循环（从 plan 开始）${NC}"
+        START_PHASE="plan"
     fi
 
     sleep 2
