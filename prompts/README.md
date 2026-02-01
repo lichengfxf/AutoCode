@@ -6,21 +6,21 @@ This directory contains all AI prompt templates used by the Bjarne autonomous de
 
 ```
 prompts/
-├── plan.md                    # Main planning phase prompt
-├── execute.md                 # Code execution phase prompt
-├── review.md                  # Review and validation prompt
-├── fix.md                     # Error fixing prompt
-├── init.md                    # Project initialization prompt
-├── refresh.md                 # Context refresh prompt
-├── decompose.md               # Task decomposition prompt
-├── finalize-worktree.md       # Finalization with git worktree support
-├── finalize.md                # Standard finalization prompt
-├── batch-plan.md.template     # Batch mode planning (requires $BJN_BATCH_SIZE)
-├── batch-execute.md           # Batch mode execution
-├── batch-review.md            # Batch mode review
-├── batch-fix.md               # Batch mode fixing
-├── dockerfile.template        # Dockerfile generation (requires $BJN_base_image)
-└── verbose-rules.template     # Verbose output rules (requires $BJN_BJARNE_TMP_DIR)
+|-- plan.md                    # Main planning phase prompt
+|-- execute.md                 # Code execution phase prompt
+|-- review.md                  # Review and validation prompt
+|-- fix.md                     # Error fixing prompt
+|-- init.md                    # Project initialization prompt
+|-- refresh.md                 # Context refresh prompt
+|-- decompose.md               # Task decomposition prompt
+|-- finalize-worktree.md       # Finalization with git worktree support
+|-- finalize.md                # Standard finalization prompt
+|-- batch-plan.md.template     # Batch mode planning (requires $BJN_BATCH_SIZE)
+|-- batch-execute.md           # Batch mode execution
+|-- batch-review.md            # Batch mode review
+|-- batch-fix.md               # Batch mode fixing
+|-- dockerfile.template        # Dockerfile generation (requires $BJN_base_image)
++-- verbose-rules.template     # Verbose output rules (requires $BJN_BJARNE_TMP_DIR)
 ```
 
 ## File Types

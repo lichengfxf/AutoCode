@@ -1,436 +1,436 @@
 # Bjarne
 
-鑷富 AI 寮€鍙戝惊鐜€傜粰瀹冧竴涓兂娉曪紝鍥炴潵鏃堕」鐩氨瀹屾垚浜嗐€�
+自主 AI 开发循环。给它一个想法，回来时项目就完成了。
 
-**绠€鑰岃█涔嬶細** 鍦� markdown 鏂囦欢涓啓涓嬩綘鎯宠鐨勫唴瀹� 鈫� 杩愯 `bjarne init idea.md` 鈫� 杩愯 `bjarne` 鈫� 绛夊緟 鈫� 瀹屾垚銆�
+**简单言之：** 在 markdown 文件中写下你想要的内容 → 运行 `bjarne init idea.md` → 运行 `bjarne` → 等待 → 完成。
 
-## 蹇€熷紑濮�
+## 快速开始
 
 ```bash
-# 瀹夎
+# 安装
 sudo curl -o /usr/local/bin/bjarne https://raw.githubusercontent.com/lichengfxf/AutoCode/refs/heads/master/bjarne && sudo chmod +x /usr/local/bin/bjarne
 
-# 鍒涘缓鎯虫硶鏂囦欢
-echo "涓€涓皢 markdown 杞崲涓� PDF 鐨� CLI 宸ュ叿" > idea.md
+# 创建想法文件
+echo "一个将 markdown 转换为 PDF 的 CLI 工具" > idea.md
 
-# 鍒濆鍖栵紙鍒涘缓 CONTEXT.md 鍜� TASKS.md锛�
+# 初始化（创建 CONTEXT.md 和 TASKS.md）
 bjarne init idea.md
 
-# 杩愯寰幆
+# 运行循环
 bjarne
 ```
 
-灏辨槸杩欐牱銆侭jarne 浼氬惊鐜鐞嗕换鍔★紝鐩村埌浣犵殑椤圭洰鏋勫缓瀹屾垚銆�
+就是这样。Bjarne 会循环处理任务，直到你的项目构建完成。
 
-## 鏍稿績姒傚康锛氫互缁撴灉涓哄鍚戠殑浠诲姟
+## 核心概念：以结果为导向的任务
 
-Bjarne 涓嶆槸涓€涓剼锠㈢殑"涓€鐩磋繍琛岀洿鍒板畬鎴�"鐨勫惊鐜€傚畠浣跨敤**鍙獙璇佺殑缁撴灉**銆�
+Bjarne 不是一个愚蠢的"一直运行直到完成"的循环。它使用**可验证的结果**。
 
-`TASKS.md` 涓殑姣忎釜浠诲姟閮介伒寰互涓嬫牸寮忥細
+`TASKS.md` 中的每个任务都遵循以下格式：
 
 ```markdown
-- [ ] 琛屽姩 鈫� 缁撴灉
+- [ ] 行动 → 结果
 ```
 
-渚嬪锛�
+例如：
 ```markdown
-- [ ] 鍦ㄥ鑸爮娣诲姞鐧诲綍鎸夐挳 鈫� header 涓瓨鍦� href="/login" 鐨勬寜閽�
-- [ ] 鍒涘缓 /api/users 绔偣 鈫� GET /api/users 杩斿洖 200 鍜� JSON 鏁扮粍
-- [ ] 娣诲姞閭楠岃瘉 鈫� 鏃犳晥閭鏄剧ず閿欒娑堟伅
+- [ ] 在导航栏添加登录按钮 → header 中存在 href="/login" 的按钮
+- [ ] 创建 /api/users 端点 → GET /api/users 返回 200 和 JSON 数组
+- [ ] 添加邮箱验证 → 无效邮箱显示错误消息
 ```
 
-缁撴灉蹇呴』鏄�**鏈哄櫒鍙獙璇佺殑**銆侭jarne 鐨� REVIEW 闃舵浼氬疄闄呮鏌ョ粨鏋滄槸鍚﹁揪鎴愶紙鎼滅储鍏冪礌銆乧url 绔偣銆侀獙璇佹枃浠跺瓨鍦級鐒跺悗缁х画銆傚彧鏈夊湪缁撴灉寰楀埌纭鍚庯紝浠诲姟鎵嶇畻瀹屾垚銆�
+结果必须是**机器可验证的**。Bjarne 的 REVIEW 阶段会实际检查结果是否达成（搜索元素、curl 端点、验证文件存在）然后继续。只有在结果得到确认后，任务才算完成。
 
-杩欏氨鏄� Bjarne 涓庣畝鍗曞惊鐜殑鍖哄埆锛�
+这就是 Bjarne 与简单循环的区别：
 
-| 闂 | 绠€鍗曞惊鐜� | Bjarne |
+| 问题 | 简单循环 | Bjarne |
 |------|---------|--------|
-| 瀹夊叏婕忔礊 | 鐩村埌鐢熶骇鐜鎵嶆娴嬪埌 | 鍦� REVIEW 涓崟鑾� |
-| DRY 杩濊 | 澶嶅埗绮樿创钄撳欢 | 鏍囪骞堕噸鏋� |
-| 鏃ョ泭搴炲ぇ鐨勫崟浣� | 鏂囦欢涓嶅彈鎺у埗鍦拌啫鑳€ | 鏋舵瀯琚鏌� |
-| 娴嬭瘯澶辫触 | 琚拷鐣ユ垨绂佺敤 | 蹇呴』閫氳繃鎵嶈兘缁х画 |
-| 姝讳唬鐮� | 闈欓粯绉疮 | 鍦� FIX 涓竻鐞� |
+| 安全遗漏 | 直到生产环境才检测到 | 在 REVIEW 中单挑 |
+| DRY 违规 | 复制粘贴代码文件 | 标记并重构 |
+| 时益过大的单元 | 文件不受控制地膨胀 | 架构被检查 |
+| 测试失败 | 被跳过或禁用 | 必须通过才能继续 |
+| 死代码 | 默认累积 | 在 FIX 中清理 |
 
-## 宸ヤ綔鍘熺悊
+## 工作原理
 
 ```
-idea.md 鈫� INIT 鈫� [PLAN 鈫� EXECUTE 鈫� REVIEW 鈫� FIX] 脳 N 鈫� 瀹屾垚
-                              鈫�
-                    notes.md 鈫� REFRESH (娣诲姞鏇村浠诲姟)
+idea.md → INIT → [PLAN → EXECUTE → REVIEW → FIX] × N → 完成
+                              ↽
+                    notes.md → REFRESH (添加更多任务)
 
-        "淇 X" 鈫� TASK 鈫� [PLAN 鈫� EXECUTE 鈫� REVIEW 鈫� FIX] 鈫� 鍒嗘敮 + PR
-                         (闅旂鐘舵€侊紝鑷姩娓呯悊)
+        "修复 X" → TASK → [PLAN → EXECUTE → REVIEW → FIX] → 分支 + PR
+                         (隔离状态，自动清理)
 ```
 
-姣忔杩唬锛�
-1. **瑙勫垝** - 閫夋嫨绗竴涓湭閫変腑鐨勪换鍔★紙鎴栦娇鐢� `-b` 鏃剁殑鐩稿叧浠诲姟鎵规锛夛紝鎻愬彇棰勬湡缁撴灉锛岀紪鍐欏寘鍚獙璇佹楠ょ殑璁″垝
-2. **鎵ц** - 瀹炵幇璁″垝锛屾爣璁颁换鍔′负瀹屾垚
-3. **璇勫** - 楠岃瘉缁撴灉宸茶揪鎴愶紝鐒跺悗妫€鏌ヤ唬鐮佽川閲�
-4. **淇** - 棣栧厛淇澶辫触鐨勭粨鏋滐紝鐒跺悗澶勭悊鍏朵粬闂
+每次迭代：
+1. **规划** - 选择第一个未选中的任务（或使用 `-b` 时的相关任务批次），提取预期结果，编写包含验证步骤的计划
+2. **执行** - 实现计划，标记任务为完成
+3. **审查** - 验证结果已达成，然后检查代码质量
+4. **修复** - 首先修复失败的结果，然后处理其他问题
 
-## Bjarne 鍒涘缓鐨勬枃浠�
+## Bjarne 创建的文件
 
-褰撲綘杩愯 `bjarne init` 鏃讹紝瀹冧細鍒涘缓杩欎簺椹卞姩鏁翠釜娴佺▼鐨勬枃浠讹細
+当你运行 `bjarne init` 时，它会创建这些引导整个流程的文件：
 
-| 鏂囦欢 | 鐢ㄩ€� |
+| 文件 | 用途 |
 |------|------|
-| `CONTEXT.md` | 闈欐€侀」鐩弬鑰� - 鎶€鏈爤銆佹灦鏋勩€佺害鏉� |
-| `TASKS.md` | 甯﹀閫夋鐨勪换鍔″垪琛� - 杩欐槸"澶ц剳" |
-| `specs/` | 澶嶆潅鍔熻兘鐨勮缁嗚鑼� |
-| `.task` | 褰撳墠浠诲姟鐘舵€侊紙涓存椂锛屾瘡娆¤凯浠ｏ級 |
+| `CONTEXT.md` | 静态项目参考 - 技术栈、架构、度量 |
+| `TASKS.md` | 带复选框的任务列表 - 这是"大脑" |
+| `specs/` | 复杂功能的详细规范 |
+| `.task` | 当前任务状态（临时，每次替换） |
 
-`TASKS.md` 鏄湡瀹炴潵婧愩€侭jarne 璇诲彇瀹冿紝閫夋嫨涓嬩竴涓湭閫変腑鐨勪换鍔★紝澶勭悊瀹冿紝骞舵爣璁颁负瀹屾垚銆�
+`TASKS.md` 是真正的大脑。Bjarne 读取它，选择下一个未选中的任务，处理它，并标记为完成。
 
-## 浣跨敤 Claude 绠＄悊 Bjarne
+## 使用 Claude 管理 Bjarne
 
-杩欓噷鏈変竴浜涘己澶х殑鍔熻兘锛�**浣犲彲浠ヤ娇鐢� Claude Code 鏉ヨ缃拰绠＄悊 Bjarne 椤圭洰**銆�
+这里有一些强大的功能，**你可以使用 Claude Code 来设置和管理 Bjarne 项目**。
 
-> **鎻愮ず锛�** 鍦ㄨ Claude 甯姪 Bjarne 涔嬪墠锛屽厛璁╁畠闃呰杩欎釜 README锛�
+> **提示：** 在让 Claude 协助 Bjarne 之前，先让它阅读这个 README：
 > ```bash
-> claude "闃呰 https://github.com/lichengfxf/AutoCode/blob/master/README.md 鐒跺悗甯垜涓� [浣犵殑鎯虫硶] 璁剧疆涓€涓� Bjarne 椤圭洰"
+> claude "阅读 https://github.com/lichengfxf/AutoCode/blob/master/README.md 然后为我 [你的想法] 设置一个 Bjarne 项目"
 > ```
 
-### 璁� Claude 缂栧啓浣犵殑鎯虫硶鏂囦欢
+### 让 Claude 编写你的想法文件
 
-涓嶇‘瀹氬浣曟弿杩颁綘鎯宠浠€涔堬紵璁� Claude 闈㈣瘯浣狅細
-
-```bash
-claude "鎴戞兂鏋勫缓 [绠€鐭弿杩癩銆傞棶鎴戦棶棰樹互浜嗚В鎴戠殑闇€姹傦紝鐒跺悗缂栧啓涓€涓缁嗙殑 idea.md 鏂囦欢锛屾垜鍙互涓� Bjarne 涓€璧蜂娇鐢ㄣ€�"
-```
-
-Claude 浼氳闂妧鏈亸濂姐€佸姛鑳姐€佺害鏉燂紝骞剁敓鎴愪竴涓粨鏋勮壇濂界殑鎯虫硶鏂囦欢銆�
-
-### 璁� Claude 鐩存帴鍒涘缓 CONTEXT.md 鍜� TASKS.md
-
-浣犱笉蹇呬娇鐢� `bjarne init`銆備綘鍙互璁� Claude 鎵嬪姩鍒涘缓鏂囦欢锛�
+不确定如何描述你想要什么？让 Claude 面试你：
 
 ```bash
-claude "鏌ョ湅杩欎釜浠ｇ爜搴撳苟鍒涘缓涓€涓� CONTEXT.md 鍜� TASKS.md 鏉ユ坊鍔� [鍔熻兘]銆備娇鐢ㄤ互缁撴灉涓哄鍚戠殑鏍煎紡锛�'- [ ] 琛屽姩 鈫� 鍙獙璇佺殑缁撴灉'"
+claude "我想构建 [简单描述]。问我问题以了解我的需求，然后编写一个详细的 idea.md 文件，我可以与 Bjarne 一起使用。"
 ```
 
-杩欏湪浠ヤ笅鎯呭喌涓嬪緢鏈夌敤锛�
-- 浣犳兂瑕佹洿澶氬浠诲姟鍒嗚В鐨勬帶鍒�
-- 浣犳鍦ㄥ悜鐜版湁椤圭洰娣诲姞鍔熻兘
-- 浣犳兂鍦� Bjarne 杩愯涔嬪墠鏌ョ湅/缂栬緫浠诲姟
+Claude 会询问技术偏好、功能、度量，并生成一个结构良好的想法文件。
 
-### 璁� Claude 鍦ㄩ」鐩腑瀹屽杽浠诲姟
+### 让 Claude 直接创建 CONTEXT.md 和 TASKS.md
 
-Bjarne 姝ｅ湪杩愯浣嗕换鍔′笉澶纭紵鍋滄瀹冨苟璁� Claude 甯姪锛�
+你不必使用 `bjarne init`。你可以让 Claude 手动创建文件：
 
 ```bash
-claude "鏌ョ湅 TASKS.md銆傝繖浜涗换鍔′笉澶熷叿浣撱€傜敤鏇存竻鏅般€佹洿鍙獙璇佺殑缁撴灉閲嶅啓瀹冧滑銆�"
+claude "查看这个代码库并创建一个 CONTEXT.md 和 TASKS.md 来添加 [功能]。使用以结果为导向的格式，'- [ ] 行动 → 可验证的结果'"
 ```
 
-### 璁� Claude 瀹℃煡杩涘害
+这在以下情况很有用：
+- 你想要更多对任务分解的控制
+- 你正在向现有项目添加功能
+- 你想在 Bjarne 运行之前查看/编辑任务
 
-鍦� Bjarne 瀹屾垚鍚庯紙鎴栬€呭鏋滀綘鍋滄瀹冿級锛�
+### 让 Claude 在项目中完善任务
+
+Bjarne 正在运行但任务不够正确？停止它并让 Claude 协助：
 
 ```bash
-claude "瀹℃煡 Bjarne 鏋勫缓鐨勫唴瀹广€傛鏌� TASKS.md 涓殑宸插畬鎴愰」鐩紝骞堕獙璇佺粨鏋滄槸鍚︾湡姝ｅ疄鐜般€傚垪鍑洪渶瑕佷慨澶嶇殑浠讳綍鍐呭銆�"
+claude "查看 TASKS.md。这些任务不够具体。用更简单、更可验证的结果重写它们。"
 ```
 
-### 鍏冨伐浣滄祦
+### 让 Claude 审查进度
 
-鏈€寮哄ぇ鐨勬ā寮忥細
+在 Bjarne 完成后（或者如果你停止它）：
 
-1. **Claude** 甯姪浣犵紪鍐� `idea.md`
-2. **Bjarne** 杩愯 `init` 骞跺垱寤轰换鍔�
-3. **Claude** 瀹℃煡鍜屽畬鍠� `TASKS.md`锛堝鏋滈渶瑕侊級
-4. **Bjarne** 鎵ц寰幆
-5. **Claude** 瀹℃煡杈撳嚭锛岀紪鍐� `notes.md`
-6. **Bjarne** 杩愯 `refresh notes.md` 骞剁户缁�
-7. 閲嶅鐩村埌婊℃剰
+```bash
+claude "审查 Bjarne 构建的内容。检查 TASKS.md 中的已完成项目，并验证结果是否真正实现。列出任何需要修复的内容。"
+```
 
-浣犲皢 Claude 浣滀负"椤圭洰缁忕悊"锛孊jarne 浣滀负"宸ヤ綔鑰�"銆�
+### 终极工作流
 
-## 缂栧啓濂界殑鎯虫硶鏂囦欢
+最强大的模式：
 
-### 绠€鍗曠殑鎯虫硶
+1. **Claude** 协助你编写 `idea.md`
+2. **Bjarne** 运行 `init` 并创建任务
+3. **Claude** 审查和完善 `TASKS.md`（如果需要）
+4. **Bjarne** 执行循环
+5. **Claude** 审查输出，编辑 `notes.md`
+6. **Bjarne** 运行 `refresh notes.md` 并继续
+7. 重复直到满意
 
-瀵逛簬绠€鍗曠殑椤圭洰锛屼竴琛屽氨澶熶簡锛�
+你将 Claude 作为"项目经理"，Bjarne 作为"工作者"。
+
+## 编写好的想法文件
+
+### 简单的想法
+
+对于简单的项目，一行就够了：
 
 ```markdown
-涓€涓皢 markdown 鏂囦欢杞崲涓� PDF 鐨� CLI 宸ュ叿
+一个将 markdown 文件转换为 PDF 的 CLI 工具
 ```
 
-Bjarne 浼氫负鎶€鏈爤銆佹祴璇曠瓑濉厖鍚堢悊鐨勯粯璁ゅ€笺€�
+Bjarne 会为技术栈、测试等填充合理的默认值。
 
-### 璇︾粏鐨勬兂锟斤拷
+### 详细的想法（可选）
 
-瀵逛簬鐗瑰畾瑕佹眰锛岃鏄庣‘锛�
+对于特定要求，要明确：
 
 ```markdown
-# 鍙戠エ鐢熸垚鍣�
+# 发票生成器
 
-涓€涓緵鑷敱鑱屼笟鑰呭垱寤哄拰绠＄悊鍙戠エ鐨� Web 搴旂敤銆�
+一个供自由职业者创建和管理发票的 Web 应用。
 
-## 鎶€鏈爤
+## 技术栈
 - Next.js 14 with App Router
-- SQLite 鏁版嵁搴擄紝浣跨敤 Drizzle ORM
+- SQLite 数据库，使用 Drizzle ORM
 - Tailwind CSS
 
-## 鍔熻兘
-- 浠〃鏉挎樉绀烘墍鏈夊彂绁ㄥ強鍏剁姸鎬侊紙鑽夌ǹ/宸插彂閫�/宸叉敮浠橈級
-- 鍒涘缓鍙戠エ琛ㄥ崟锛氬鎴峰悕绉般€佽椤圭洰銆佺◣鐜�
-- 浣跨敤涓撲笟妯℃澘鐢熸垚 PDF
+## 功能
+- 以表格形式显示所有发票及其状态（草稿/已发送/已支付）
+- 创建发票表单：客户名称、项目列表、税率
+- 使用专业模板生成 PDF
 
-## 绾︽潫
-- 鏃犺韩浠介獙璇侊紙鍗曠敤鎴凤級
-- 鎵€鏈夐噾棰濅互缇庡厓涓哄崟浣�
+## 约束
+- 无需身份验证（单用户）
+- 所有金额以美元为单位
 ```
 
-### 鎻愮ず
+### 提示
 
-- **绠€鍗曠殑鎯虫硶**浼氬緱鍒板悎鐞嗙殑榛樿鍊�
-- **璇︾粏鐨勬兂娉�**浼氫弗鏍兼寜鐓� written 灏婇噸
-- 濡傛灉浣犲湪鎰忥紝灏辨坊鍔犵害鏉燂紙渚嬪锛�"浣跨敤 Python"锛�"鏃犱緷璧�"锛�
-- Bjarne 鏃犲ご杩愯 - 瀹冩棤娉曟彁闂紝鎵€浠ユ彁鍓嶆槑纭�
-- 浣犳彁渚涚殑缁嗚妭瓒婂锛岀粨鏋滆秺鎺ヨ繎浣犵殑鎰挎櫙
+- **简单的想法**会得到合理的默认值
+- **详细的想法**会严格按 written 执行
+- 如果你在意，就添加约束（例如，"使用 Python"，"无依赖"）
+- Bjarne 无头运行 - 它无法提问，所以提前明确
+- 你提供的细节越多，结果越接近你的场景
 
-## 鍛戒护鍙傝€�
+## 命令参数
 
-| 鍛戒护 | 浣滅敤 |
+| 命令 | 作用 |
 |------|------|
-| `bjarne init idea.md` | 浠庢兂娉曟枃浠跺垱寤洪」鐩� |
-| `bjarne init --safe idea.md` | 鐩稿悓锛屼絾鍚敤 Docker 娌欑 |
-| `bjarne` | 杩愯寮€鍙戝惊鐜� |
-| `bjarne 50` | 杩愯 50 娆¤凯浠ｏ紙榛樿锛�25锛� |
-| `bjarne --batch` | 鍚敤鎵归噺妯″紡锛堟渶澶� 5 涓浉鍏充换鍔★級 |
-| `bjarne --batch 50` | 鎵归噺妯″紡锛�50 娆¤凯浠� |
-| `bjarne --batch=3` | 鎵归噺妯″紡锛岃嚜瀹氫箟澶у皬锛堟渶澶� 3 涓换鍔★級 |
-| `bjarne --batch=3 50` | 鎵归噺鏈€澶� 3 涓换鍔★紝50 娆¤凯浠� |
-| `bjarne refresh notes.md` | 浠庡弽棣堢瑪璁版坊鍔犱换鍔� |
-| `bjarne task "鎻忚堪"` | 杩愯闅旂鐨勫崟浠诲姟淇 |
-| `bjarne --rebuild` | 閲嶆柊鏋勫缓 Docker 闀滃儚锛堝畨鍏ㄦā寮忥級 |
-| `bjarne --update` | 绔嬪嵆妫€鏌ユ洿鏂� |
-| `bjarne --disable-auto-update` | 绂佺敤鑷姩鏇存柊 |
-| `bjarne --enable-auto-update` | 閲嶆柊鍚敤鑷姩鏇存柊 |
+| `bjarne init idea.md` | 从想法文件创建项目 |
+| `bjarne init --safe idea.md` | 相同，但启用 Docker 沙箱 |
+| `bjarne` | 运行开发循环 |
+| `bjarne 50` | 运行 50 次迭代（默认：25） |
+| `bjarne --batch` | 启用批量模式（最多 5 个相关任务） |
+| `bjarne --batch 50` | 批量模式，50 次迭代 |
+| `bjarne --batch=3` | 批量模式，自定义大小（最多 3 个任务） |
+| `bjarne --batch=3 50` | 批量最多 3 个任务，50 次迭代 |
+| `bjarne refresh notes.md` 从反馈笔记添加任务 |
+| `bjarne task "描述"` | 运行隔离的单任务修复 |
+| `bjarne --rebuild` | 重新构建 Docker 镜像（安全模式） |
+| `bjarne --update` | 立即检查更新 |
+| `bjarne --disable-auto-update` | 禁用自动更新 |
+| `bjarne --enable-auto-update` | 重新启用自动更新 |
 
-## 宸ヤ綔娴佽鎯�
+## 工作流详情
 
-### 鍒濆鍖�
+### 初始化
 
 ```bash
 bjarne init idea.md
 ```
 
-鍒涘缓 `CONTEXT.md`銆乣TASKS.md` 鍜屽彲閫夌殑 `specs/`銆�
+创建 `CONTEXT.md`、`TASKS.md` 和可选的 `specs/`。
 
-**閫傜敤浜庣幇鏈夐」鐩紒** 濡傛灉浣犲湪鏈夌幇鏈変唬鐮佺殑鏂囦欢澶逛腑杩愯 `init`锛孊jarne 浼氭娴嬩綘鐨勪唬鐮佸簱锛屼簡瑙ｅ凡鏋勫缓鐨勫唴瀹癸紝骞跺垱寤哄湪鐜版湁浠ｇ爜鍩虹涓婃瀯寤虹殑浠诲姟銆�
+**适用于现有项目！** 如果你在有现有代码的文件目录中运行 `init`，Bjarne 会扫描你的代码库，了解已构建的内容，并创建在现有代码基础上构建的任务。
 
-### 杩愯
-
-```bash
-bjarne          # 榛樿锛氭渶澶� 25 娆¤凯浠�
-bjarne 50       # 鑷畾涔夛細鏈€澶� 50 娆¤凯浠�
-```
-
-### 鎵归噺妯″紡
-
-榛樿鎯呭喌涓嬶紝Bjarne 姣忎釜 PLAN 鈫� EXECUTE 鈫� REVIEW 鈫� FIX 寰幆澶勭悊涓€涓换鍔°€傛壒閲忔ā寮忓皢鐩稿叧浠诲姟鍒嗙粍鍦ㄤ竴璧凤細
+### 运行
 
 ```bash
-bjarne --batch        # 鎵归噺妯″紡锛屾渶澶� 5 涓浉鍏充换鍔�
-bjarne --batch 50     # 鎵归噺妯″紡锛�50 娆¤凯浠�
-bjarne --batch=3      # 鎵归噺妯″紡锛屾渶澶� 3 涓浉鍏充换鍔�
-bjarne --batch=3 50   # 鏈€澶� 3 涓换鍔★紝50 娆¤凯浠�
-bjarne -b3 50         # 绠€鍐欙細鏈€澶� 3 涓换鍔★紝50 娆¤凯浠�
-bjarne -b             # 绠€鍐欙細鎵归噺妯″紡锛岄粯璁ゅぇ灏忥紙5锛�
+bjarne          # 默认：最多 25 次迭代
+bjarne 50       # 自定义：最多 50 次迭代
 ```
 
-**宸ヤ綔鍘熺悊锛�** 涓嶆槸鍙€夋嫨绗竴涓湭閫変腑鐨勪换鍔★紝Bjarne 鎵弿鎵€鏈夊緟澶勭悊浠诲姟骞跺皢鑷劧灞炰簬鍦ㄤ竴璧风殑浠诲姟鍒嗙粍 - 鍚屼竴涓枃浠躲€佸悓涓€涓姛鑳姐€侀€昏緫渚濊禆銆傚畠鍙兘鎵瑰鐞� 1 涓换鍔★紙濡傛灉鏄嫭绔嬬殑锛夋垨鏈€澶� N 涓换鍔★紙濡傛灉绱у瘑鑰﹀悎锛夈€�
+### 批量模式
 
-**鏉冭　锛�**
+默认情况下，Bjarne 每个 PLAN → EXECUTE → REVIEW → FIX 循环处理一个任务。批量模式将相关任务分组在一起：
 
-| | 鍗曚换鍔★紙榛樿锛� | 鎵归噺妯″紡 |
+```bash
+bjarne --batch        # 批量模式，最多 5 个相关任务
+bjarne --batch 50     # 批量模式，50 次迭代
+bjarne --batch=3      # 批量模式，最多 3 个相关任务
+bjarne --batch=3 50   # 最多 3 个任务，50 次迭代
+bjarne -b3 50         # 简写：最多 3 个任务，50 次迭代
+bjarne -b             # 简写：批量模式，默认大小（5）
+```
+
+**工作原理：** 不是只选择第一个未选中的任务，Bjarne 扫描所有待处理任务并将自然属于在一起的任务分组 - 同一个文件、同一个功能、逻辑依赖。它可能只处理 1 个任务（如果是独立的）或最多 N 个任务（如果识别出亲和性）。
+
+**权衡：**
+
+| | 单任务（默认） | 批量模式 |
 |---|---|---|
-| 涓婁笅鏂囦娇鐢� | 鏇撮珮锛堟瘡涓换鍔″畬鏁村惊鐜級 | 鏇翠綆锛堝涓换鍔′竴涓惊鐜級 |
-| 閫熷害 | 鏇存參 | 鏇村揩 |
-| 绮惧害 | 鏇撮珮锛堜笓娉ㄦ敞鎰忓姏锛� | 鍙兘鏇翠綆锛堟敞鎰忓姏鍒嗘暎锛� |
-| 鏈€閫傚悎 | 澶嶆潅浠诲姟锛岀簿搴﹀伐浣� | 鐩稿叧浠诲姟锛屾洿蹇凯浠� |
+| 上下文使用 | 更高（每个任务完整循环） | 更低（多个任务一个循环） |
+| 速度 | 更慢 | 更快 |
+| 精度 | 更高（专门注意力） | 可能更低（注意力分散） |
+| 最适合 | 复杂任务，精度工作 | 相关任务，更快迭代 |
 
-**浣曟椂浣跨敤鎵归噺妯″紡锛�**
-- 璁稿灏忕殑鐩稿叧浠诲姟锛堜緥濡傦紝"娣诲姞瀛楁 X"锛�"娣诲姞瀛楁 Y"锛�"娣诲姞瀛楁 Z"锛�
-- 鍦� TASKS.md 涓寜闃舵鍒嗙粍鐨勪换鍔�
-- 浣犳兂瑕佹洿蹇凯浠ｅ苟鎺ュ彈杞诲井鐨勭簿搴︽潈琛�
+**何时使用批量模式：**
+- 许多小的相关任务（例如，"添加字段 X"，"添加字段 Y"，"添加字段 Z"）
+- 在 TASKS.md 中按阶段分组的任务
+- 你想要更快迭代并接受轻微的精度权衡
 
-**浣曟椂鍧氭寔鍗曚换鍔★細**
-- 澶嶆潅鐨勬灦鏋勪换鍔�
-- 闇€瑕佷粩缁嗐€佷笓娉ㄥ疄鐜扮殑浠诲姟
-- 褰撶簿搴︽瘮閫熷害鏇撮噸瑕佹椂
+**何时坚持单任务：**
+- 复杂的架构任务
+- 需要详细、专门实现的任务
+- 当精度比速度更重要时
 
-### 鍒锋柊
+### 刷新
 
-鍦ㄦ祴璇曚綘鐨勯」鐩悗锛屽彂鐜颁簡 bug 鎴栨兂瑕佹柊鍔熻兘锛熺紪鍐欒嚜鐢辨牸寮忕殑绗旇锛�
+在测试你的项目后，发现了 bug 或想要新功能？编写自由格式的笔记：
 
 ```markdown
 # notes.md
-鐧诲綍鎸夐挳鍦ㄧЩ鍔ㄨ澶囦笂涓嶈捣浣滅敤
-娣诲姞鏆楄壊妯″紡鍒囨崲
-鏈€濂芥湁涓€涓姞杞芥棆杞櫒
+登录按钮在移动设备上不起作用
+添加暗色模式切换
+最好有一个加载旋转器
 ```
 
-鐒跺悗锛�
+然后：
 ```bash
 bjarne refresh notes.md
-bjarne  # 鍐嶆杩愯
+bjarne  # 再次运行
 ```
 
-Bjarne 灏嗕綘鐨勭瑪璁拌浆鎹负姝ｇ‘鏍煎紡鐨勪换鍔″苟缁х画銆�
+Bjarne 将你的笔记转换为正确格式的任务并继续。
 
-### 浠诲姟妯″紡锛堥殧绂讳慨澶嶏級
+### 任务模式（隔离修复）
 
-闇€瑕佸揩閫熶慨澶嶈€屼笉鎺ヨЕ涓婚」鐩姸鎬侊紵
+需要快速修复而不触及主项目状态？
 
 ```bash
-bjarne task "淇鐧诲綍鎸夐挳鏃犲搷搴�"
+bjarne task "修复登录按钮无响应"
 ```
 
-浠诲姟妯″紡锛�
-- 鍦� `.bjarne/tasks/<task-id>/` 涓垱寤洪殧绂荤姸鎬�
-- 杩愯瀹屾暣鐨� PLAN 鈫� EXECUTE 鈫� REVIEW 鈫� FIX 寰幆
-- 鍒涘缓 git 鍒嗘敮鍜� PR锛堝鏋� git/gh 鍙敤锛�
-- 鑷姩娓呯悊
+任务模式：
+- 在 `.bjarne/tasks/<task-id>/` 中创建隔离状态
+- 运行完整的 PLAN → EXECUTE → REVIEW → FIX 循环
+- 创建 git 分支和 PR（如果 git/gh 可用）
+- 自动清理
 
-閫夐」锛�
+选项：
 ```bash
-bjarne task "鎻忚堪"                  # 鏂囨湰鎻忚堪
-bjarne task bugfix.md              # 浠庢枃浠惰鍙�
-bjarne task --safe "鎻忚堪"          # Docker 娌欑
-bjarne task --no-pr "..."          # 璺宠繃 PR 鍒涘缓
-bjarne task -n 10 "..."            # 闄愬埗涓� 10 娆¤凯浠�
-bjarne task --no-worktree "..."    # 鍦ㄥ綋鍓嶅垎鏀伐浣滐紙褰卞搷鍏朵粬浼氳瘽锛�
+bjarne task "描述"                  # 文本描述
+bjarne task bugfix.md              # 从文件读取
+bjarne task --safe "描述"          # Docker 沙箱
+bjarne task --no-pr "..."          # 跳过 PR 创建
+bjarne task -n 10 "..."            # 限制为 10 次迭代
+bjarne task --no-worktree "..."    # 在当前分支工作（影响其他会话）
 ```
 
-**浣曟椂浣跨敤鍝釜锛�**
+**何时使用哪个：**
 
-| 鍦烘櫙 | 浣跨敤 |
+| 场景 | 使用 |
 |------|------|
-| 鏋勫缓鏂伴」鐩� | `bjarne init` + `bjarne` |
-| 鍚戠幇鏈夐」鐩坊鍔犲姛鑳� | `bjarne refresh` + `bjarne` |
-| 蹇€熼殧绂讳慨澶� | `bjarne task` |
-| 骞惰澶氫釜淇 | 鍦ㄤ笉鍚岀粓绔腑杩愯澶氫釜 `bjarne task` |
+| 构建新项目 | `bjarne init` + `bjarne` |
+| 向现有项目添加功能 | `bjarne refresh` + `bjarne` |
+| 快速隔离修复 | `bjarne task` |
+| 并行多个修复 | 在不同终端中运行多个 `bjarne task` |
 
-## 瀹夊叏妯″紡
+## 安全模式
 
-鏃犱汉鍊煎畧杩愯 Bjarne锛熶娇鐢ㄥ畨鍏ㄦā寮忥細
+无人值守运行 Bjarne？使用安全模式：
 
 ```bash
-bjarne init --safe idea.md   # 鍒涘缓 Docker 閰嶇疆
-bjarne                        # 鑷姩鍦ㄥ鍣ㄤ腑杩愯
+bjarne init --safe idea.md   # 创建 Docker 配置
+bjarne                        # 自动在容器中运行
 ```
 
-浣犲彧闇€瑕佸湪 `init` 鏃朵娇鐢� `--safe`銆備竴鏃� `.bjarne/Dockerfile` 瀛樺湪锛屾墍鏈夊悗缁殑 `bjarne` 杩愯閮戒細鑷姩妫€娴嬪畠骞朵娇鐢� Docker銆�
+你只需要在 `init` 时使用 `--safe`。一旦 `.bjarne/Dockerfile` 存在，所有后续的 `bjarne` 运行都会自动检测它并使用 Docker。
 
-瀹夊叏妯″紡锛�
-- 鍦� Docker 瀹瑰櫒鍐呰繍琛� Claude
-- 瀹瑰櫒鍙兘鐪嬪埌浣犵殑椤圭洰鐩綍
-- 绯荤粺鐨勫叾浣欓儴鍒嗗畬鍏ㄥ彈淇濇姢
-- 浣犵殑 Claude 鍑瘉浠ュ彧璇绘柟寮忔寕杞�
+安全模式：
+- 在 Docker 容器内运行 Claude
+- 容器只能看到你的项目目录
+- 系统的其余部分完全受保护
+- 你的 Claude API 密钥只以环境变量形式挂载
 
-鑷姩妫€娴嬩綘鐨勬妧鏈爤锛圢ode.js銆丳ython銆丷ust銆丟o銆丳HP锛夊苟浣跨敤閫傚綋鐨� Docker 闀滃儚銆�
+自动检测你的技术栈（Node.js、Python、Rust、Go、PHP）并使用适当的 Docker 镜像。
 
-鑷畾涔夛細
+自定义：
 ```bash
-vim .bjarne/Dockerfile       # 鏍规嵁闇€瑕佺紪杈�
-bjarne --rebuild             # 浣跨敤鏇存敼閲嶆柊鏋勫缓
+vim .bjarne/Dockerfile       # 根据需要编辑
+bjarne --rebuild             # 使用修改重新构建
 ```
 
-闇€瑕� [Docker](https://docs.docker.com/get-docker/)銆�
+需要 [Docker](https://docs.docker.com/get-docker/)。
 
-## 鎻愮ず璇嶇洰褰�
+## 提示词目录
 
-Bjarne 鐨勬墍鏈� AI 鎻愮ず璇嶉兘瀛樺偍鍦� `prompts/` 鐩綍涓紙鐩稿浜� bjarne 鑴氭湰锛夈€�
+Bjarne 的所有 AI 提示词都存储在 `prompts/` 目录中（相对于 bjarne 脚本）。
 
-### 鐩綍缁撴瀯
+### 目录结构
 
 ```
 prompts/
-鈹溾攢鈹€ plan.md              - 涓昏鍒掗樁娈垫彁绀鸿瘝
-鈹溾攢鈹€ execute.md           - 浠ｇ爜鎵ц闃舵鎻愮ず璇�
-鈹溾攢鈹€ review.md            - 璇勫鍜岄獙璇佹彁绀鸿瘝
-鈹溾攢鈹€ fix.md               - 閿欒淇鎻愮ず璇�
-鈹溾攢鈹€ init.md              - 椤圭洰鍒濆鍖栨彁绀鸿瘝
-鈹溾攢鈹€ refresh.md           - 涓婁笅鏂囧埛鏂版彁绀鸿瘝
-鈹溾攢鈹€ decompose.md         - 浠诲姟鍒嗚В鎻愮ず璇�
-鈹溾攢鈹€ finalize-worktree.md - 鏀寔 git worktree 鐨勬渶缁堝寲
-鈹溾攢鈹€ finalize.md          - 鏍囧噯鏈€缁堝寲鎻愮ず璇�
-鈹溾攢鈹€ batch-plan.md.template     - 鎵归噺妯″紡瑙勫垝锛堥渶瑕佸彉閲忔浛鎹級
-鈹溾攢鈹€ batch-execute.md           - 鎵归噺妯″紡鎵ц
-鈹溾攢鈹€ batch-review.md            - 鎵归噺妯″紡璇勫
-鈹溾攢鈹€ batch-fix.md               - 鎵归噺妯″紡淇
-鈹溾攢鈹€ dockerfile.template        - Dockerfile 鐢熸垚锛堥渶瑕佸彉閲忔浛鎹級
-鈹溾攢鈹€ verbose-rules.template     - 璇︾粏杈撳嚭瑙勫垯锛堥渶瑕佸彉閲忔浛鎹級
-鈹斺攢鈹€ README.md             - 鎻愮ず璇嶇郴缁熸枃妗�
+|-- plan.md              - 主要规划阶段提示词
+|-- execute.md           - 代码执行阶段提示词
+|-- review.md            - 审查和验证提示词
+|-- fix.md               - 错误修复提示词
+|-- init.md              - 项目初始化提示词
+|-- refresh.md           - 上下文刷新提示词
+|-- decompose.md         - 任务分解提示词
+|-- finalize-worktree.md - 支持 git worktree 的最终化
+|-- finalize.md          - 标准最终化提示词
+|-- batch-plan.md.template     - 批量模式规划（需要变量替换）
+|-- batch-execute.md           - 批量模式执行
+|-- batch-review.md            - 批量模式审查
+|-- batch-fix.md               - 批量模式修复
+|-- dockerfile.template        - Dockerfile 生成（需要变量替换）
+|-- verbose-rules.template     - 详细输出规则（需要变量替换）
++-- README.md             - 提示词系统文档
 ```
 
-### 鏂囦欢绫诲瀷
+### 文件类型
 
-- `*.md` - 闈欐€佹彁绀鸿瘝锛堟寜鍘熸牱鍔犺浇锛�
-- `*.template` - 闇€瑕佸彉閲忔浛鎹㈢殑鎻愮ず璇嶏紙浣跨敤 `envsubst`锛�
+- `*.md` - 静态提示词（按原样加载）
+- `*.template` - 需要变量替换的提示词（使用 `envsubst`）
 
-### 鑷畾涔夋彁绀鸿瘝
+### 自定义提示词
 
-浣犲彲浠ラ€氳繃缂栬緫 `prompts/` 鐩綍涓殑鏂囦欢鏉ヨ嚜瀹氫箟 Bjarne 鐨勮涓猴細
+你可以通过编辑 `prompts/` 目录中的文件来自定义 Bjarne 的行为：
 
-1. **鎵惧埌鐩稿叧鎻愮ず璇嶆枃浠�**
-2. **缂栬緫鍐呭** - 瀵逛簬 `*.template` 鏂囦欢锛屼娇鐢� `$VAR_NAME` 鏍煎紡琛ㄧず鍙橀噺
-3. **淇濆瓨鏇存敼** - Bjarne 浼氬湪涓嬫杩愯鏃惰嚜鍔ㄥ姞杞芥洿鏂扮殑鎻愮ず璇�
+1. **找到相关提示词文件**
+2. **编辑内容** - 对于 `*.template` 文件，使用 `$VAR_NAME` 格式表示变量
+3. **保存修改** - Bjarne 会在下次运行时自动加载更新的提示词
 
-**娉ㄦ剰锛�** 缂栬緫鎻愮ず璇嶅彲鑳戒細褰卞搷 Bjarne 鐨勮涓恒€傚缓璁湪鑷畾涔変箣鍓嶅浠藉師濮嬫枃浠躲€�
+**注意：** 编辑提示词可能会影响 Bjarne 的行为。建议在自定义之前备份原始文件。
 
-璇︾粏鏂囨。璇峰弬闃� [prompts/README.md](prompts/README.md)銆�
+详细文档请参考 [prompts/README.md](prompts/README.md)。
 
-## 瑕佹眰
+## 要求
 
-- 宸插畨瑁呭苟璁よ瘉 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
-- **macOS 鎴� Linux**锛圵indows 鐢ㄦ埛锛氫娇鐢� [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)锛�
-- [Docker](https://docs.docker.com/get-docker/)锛堝彲閫夛紝鐢ㄤ簬瀹夊叏妯″紡锛�
+- 已安装并认证 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- **macOS 或 Linux**（Windows 用户：使用 [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)）
+- [Docker](https://docs.docker.com/get-docker/)（可选，用于安全模式）
 
-## 鎵€鏈夋枃浠跺弬鑰�
+## 所有文件参考
 
-| 鏂囦欢 | 鐢ㄩ€� |
+| 文件 | 用途 |
 |------|------|
-| `CONTEXT.md` | 闈欐€侀」鐩弬鑰� |
-| `TASKS.md` | 澶嶉€夋浠诲姟鍒楄〃锛堜富瑕佺姸鎬侊級 |
-| `specs/` | 璇︾粏瑙勮寖 |
-| `.task` | 褰撳墠浠诲姟鐘舵€侊紙涓存椂锛� |
-| `.bjarne/Dockerfile` | Docker 閰嶇疆锛堝畨鍏ㄦā寮忥級 |
-| `.bjarne/logs/` | 浼氳瘽鏃ュ織鍜屾晠闅滆鎯� |
-| `.bjarne/tasks/<id>/` | 浠诲姟妯″紡鐘舵€侊紙闅旂锛岃嚜鍔ㄦ竻鐞嗭級 |
-| `prompts/` | AI 鎻愮ず璇嶆ā鏉� |
+| `CONTEXT.md` | 静态项目参考 |
+| `TASKS.md` | 复选框任务列表（主要状态） |
+| `specs/` | 详细规范 |
+| `.task` | 当前任务状态（临时，） |
+| `.bjarne/Dockerfile` | Docker 配置（安全模式） |
+| `.bjarne/logs/` | 会话日志和故障排除 |
+| `.bjarne/tasks/<id>/` | 任务模式状态（隔离，自动清理） |
+| `prompts/` | AI 提示词模板 |
 
-## 鑷姩鏇存柊
+## 自动更新
 
-Bjarne 姣� 2 澶╂鏌ヤ竴娆℃洿鏂帮細
+Bjarne 每 2 天检查一次更新：
 
 ```
-bjarne 鏈夋柊鐗堟湰鍙敤銆�
-鏄惁鏇存柊? [y/N]
+bjarne 有新版本可用。
+是否更新? [y/N]
 ```
 
 ```bash
-bjarne --update                # 绔嬪嵆妫€鏌ユ洿鏂�
-bjarne --disable-auto-update   # 绂佺敤
-bjarne --enable-auto-update    # 閲嶆柊鍚敤
+bjarne --update                # 立即检查更新
+bjarne --disable-auto-update   # 禁用
+bjarne --enable-auto-update    # 重新启用
 ```
 
-## 绔欏湪 Ralph 鐨勮偐鑶€涓�
+## 站在 Ralph 的肩膀上
 
-Bjarne 鍙楀埌 [Ralph Wiggum 鎶€鏈痌(https://ghuntley.com/ralph/) 鐨勫惎鍙戯紝鐢� [Geoffrey Huntley](https://ghuntley.com/) 鍒涘缓 - 浠栨槸婢冲ぇ鍒╀簹鍐滄潙鐨勪竴浣嶅北缇婂啘姘戯紝璇佹槑浜�"鎰氳牏鐨勪簨鎯呭彲浠ュ嚭濂囧湴鏈夋晥"銆�
+Bjarne 受到 [Ralph Wiggum 技术](https://ghuntley.com/ralph/) 的启发，由 [Geoffrey Huntley](https://ghuntley.com/) 创建 - 他是澳大利亚新南威尔士州的一位农民，证明了"愚蠢的想法可以出奇地有效"。
 
-鏈€鍒濈殑 Ralph 缇庝附鑰岀畝鍗曪細涓€涓� bash 寰幆锛屾寔缁繍琛� Claude 鐩村埌宸ヤ綔瀹屾垚銆侴eoffrey 鏇剧粡杩炵画杩愯瀹冧笁涓湀锛岄啋鏉ユ椂鍙戠幇涓€涓姛鑳藉畬鏁寸殑缂栫▼璇█锛屽叾涓寘鍚� Gen Z 淇氳鍏抽敭瀛椼€�
+最初的 Ralph 美丽而简单：一个 bash 循环，持续运行 Claude 直到工作完成。Geoffrey 曾经连续运行它三个月，醒来时发现一个功能完整的编程语言，其中包含 Gen Z 俚语关键字。
 
-Bjarne 涓烘贩涔辨坊鍔犱簡缁撴瀯 - 浠诲姟瑙勫垝銆佷唬鐮佸鏌ュ拰淇寰幆 - 浣嗙簿绁炴槸涓€鏍风殑锛�*澶╃湡鐨勫潥鎸佷細鑳滃埄*銆�
+Bjarne 为此添加了结构 - 任务规划、代码审查和修复循环 - 但精神是一样的，*天然的坚持会获胜*。
 
-## 璐＄尞
+## 贡献
 
-娆㈣繋璐＄尞锛佺壒鍒槸锛�
-- 鏂扮殑鎻愮ず璇嶆ā鏉�
-- 鎶€鏈爤妫€娴嬫敼杩�
-- Docker 闀滃儚浼樺寲
-- 鏂囨。缈昏瘧
+欢迎贡献！特别是：
+- 新的提示词模板
+- 技术栈检测改进
+- Docker 镜像优化
+- 文档翻译
 
-## 璁稿彲璇�
+## 许可证
 
 MIT
