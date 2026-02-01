@@ -536,6 +536,46 @@ generate_task_id() {
     echo "${timestamp}-${slug}"
 }
 
+# 检测 jq 是否可用
+HAS_JQ=0
+if command -v jq &>/dev/null; then
+    HAS_JQ=1
+fi
+
+# 处理 JSON 流输出，提取并格式化内容
+process_json_stream() {
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            if [[ "$HAS_JQ" == "1" ]]; then
+                # 尝试用 jq 提取文本内容或格式化 JSON
+                echo "$line" | jq -r '
+                    if .type == "text" then
+                        .text
+                    elif .type == "error" then
+                        "ERROR: \(.error.message // .error)"
+                    elif .type == "tool_use" then
+                        if .name == "Bash" then
+                            "\n\(.name): \(.input.command // "")"
+                        elif .name == "Read" then
+                            "\n\(.name): \(.input.file_path // "")"
+                        elif .name == "Write" or .name == "Edit" then
+                            "\n\(.name): \(.input.file_path // "")"
+                        else
+                            "\n\(.name)"
+                        end
+                    elif .text then
+                        .text
+                    else
+                        .
+                    end
+                ' 2>/dev/null || echo "$line"
+            else
+                echo "$line"
+            fi
+        fi
+    done
+}
+
 # 使用重试逻辑运行 claude（支持安全模式）
 # 用法：run_claude "prompt" "PHASE_NAME"
 run_claude() {
@@ -602,15 +642,19 @@ run_claude() {
             # 挂载临时文件夹用于详细输出日志（容器内路径相同）
             docker_args+=" -v $BJN_BJARNE_TMP_DIR:$BJN_BJARNE_TMP_DIR"
 
-            # 使用 tee 运行，实时输出到屏幕和文件
-            docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
-                $docker_args -w /workspace "$IMAGE_NAME" \
-                claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # 运行并使用 jq 格式化 JSON 输出，同时保存原始输出到日志
+            {
+                docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
+                    $docker_args -w /workspace "$IMAGE_NAME" \
+                    claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1
+            } | tee -a "$claude_log_file" | process_json_stream
             # 从管道获取退出码（使用 PIPESTATUS）
             exit_code=${PIPESTATUS[0]}
         else
-            # 在主机上使用 tee 运行，实时输出
-            claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1 | tee -a "$claude_log_file"
+            # 在主机上运行，使用 jq 格式化 JSON 输出，同时保存原始输出到日志
+            {
+                claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1
+            } | tee -a "$claude_log_file" | process_json_stream
             # 从管道获取退出码
             exit_code=${PIPESTATUS[0]}
         fi
