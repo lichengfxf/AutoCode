@@ -547,31 +547,33 @@ process_json_stream() {
     while IFS= read -r line; do
         if [[ -n "$line" ]]; then
             if [[ "$HAS_JQ" == "1" ]]; then
-                # 尝试用 jq 提取 content 数组中的数据
+                # 提取 message.content 数组中的数据
                 echo "$line" | jq -r '
-                    if .content and (.content | type) == "array" then
-                        .content[] |
+                    if .message and .message.content then
+                        .message.content[] |
                             if .type == "text" then
                                 .text
                             elif .type == "tool_use" then
                                 if .name == "Bash" then
-                                    "\n[Bash] \(.input.command // "")"
+                                    "\n>>> [Bash] \(.input.command // "")"
                                 elif .name == "Read" then
-                                    "\n[Read] \(.input.file_path // "")"
+                                    "\n>>> [Read] \(.input.file_path // "")"
                                 elif .name == "Write" or .name == "Edit" then
-                                    "\n[\(.name)] \(.input.file_path // "")"
+                                    "\n>>> [\(.name)] \(.input.file_path // "")"
                                 else
-                                    "\n[\(.name)]"
+                                    "\n>>> [\(.name)]"
+                                end
+                            elif .type == "tool_result" then
+                                if .content and (.content | type) == "string" then
+                                    .content
+                                elif .content and (.content | type) == "object" and .content.text then
+                                    .content.text
+                                else
+                                    empty
                                 end
                             else
                                 empty
                             end
-                    elif .type == "text" then
-                        .text
-                    elif .type == "error" then
-                        "ERROR: \(.error.message // .error)"
-                    elif .text then
-                        .text
                     else
                         empty
                     end
