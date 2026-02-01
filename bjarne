@@ -2,21 +2,16 @@
 # Bjarne - 自主 AI 开发系统
 #
 # 命令：
-#   bjarne init [--safe]            - 从 idea.md 文件初始化项目
-#   bjarne refresh <notes.md>       - 用一个自由格式笔记，添加任务到现有项目
-#   bjarne [opts] [n]               - 运行 n 次迭代（默认 25 次）
-#   bjarne --rebuild                - 强制重新构建 Docker 镜像（仅安全模式）
-#   bjarne --update                 - 立即检查更新
-#   bjarne --disable-auto-update    - 禁用自动更新检查
-#   bjarne --enable-auto-update     - 重新启用自动更新检查
+#   bjarne init                   - 从 idea.md 文件初始化项目
+#   bjarne refresh <notes.md>     - 用一个自由格式笔记，添加任务到现有项目
+#   bjarne [opts] [n]             - 运行 n 次迭代（默认 25 次）
+#   bjarne --update              - 立即检查更新
+#   bjarne --disable-auto-update - 禁用自动更新检查
+#   bjarne --enable-auto-update  - 重新启用自动更新检查
 #
 # 主循环选项：
 #   -p <phase>          - 从指定阶段开始 (plan|exec|review|fix)
 #                         用于任务中断后恢复，避免从头开始
-#
-# 安全模式 (--safe)：在 Docker 容器中运行 Claude，该容器只能访问
-# 项目目录。用于无人值守运行，以防止对系统上其他文件
-# 造成意外损坏。
 #
 # 循环：规划 → 执行 → 评审 → 修复
 #
@@ -58,10 +53,6 @@ TASK_STATE_REVIEW="bjn_task.review"
 # 重试设置
 MAX_RETRIES=5
 RETRY_DELAY=10
-
-# 超时设置（秒），0 表示不限制
-CLAUDE_TIMEOUT=0
-CLAUDE_TIMEOUT_SIGNAL=TERM  # 超时后发送的信号：TERM (15) 或 KILL (9)
 
 # 日志（使用绝对路径以在 worktree 切换后保持有效）
 BJARNE_PROJECT_ROOT="$(pwd)"
@@ -245,7 +236,6 @@ log_failure() {
         echo "退出码: $exit_code"
         echo "提示词大小: $prompt_size 字节"
         echo "工作目录: $(pwd)"
-        echo "安全模式: $SAFE_MODE"
         echo ""
         echo "=== CLAUDE 输出 ==="
         echo "$output"
@@ -264,13 +254,6 @@ log_failure() {
     log "ERROR" "故障已记录到 $fail_file"
     echo -e "${YELLOW}  故障详情已保存到: $fail_file${NC}"
 }
-
-# 安全模式 (Docker) 设置
-BJARNE_DIR=".bjarne"
-DOCKERFILE="$BJARNE_DIR/Dockerfile"
-SAFE_MODE=false
-IMAGE_NAME=""
-
 #==============================================================================
 # 提示词 - 早期定义，以便任务模式和主循环都可以使用它们
 #==============================================================================
@@ -288,7 +271,6 @@ IMAGE_NAME=""
 #   ├── decompose.md         - 任务分解提示词
 #   ├── finalize-worktree.md - 支持 git worktree 的最终化
 #   ├── finalize.md          - 标准最终化提示词
-#   ├── dockerfile.template        - Dockerfile 生成（需要 $BJN_base_image）
 #   └── verbose-rules.template     - 详细输出规则（需要 $BJN_BJARNE_TMP_DIR）
 #
 # 文件命名约定：
@@ -343,8 +325,8 @@ load_prompt() {
 #   variables_to_substitute：要替换的变量可选列表（例如 "$BJN_base_image"）
 # 返回：成功时返回 0，文件未找到时返回 1
 # 示例：
-#   load_prompt_with_subst "dockerfile.template"              # 替换所有环境变量
-#   load_prompt_with_subst "dockerfile.template" '$BJN_base_image' # 仅替换 $BJN_base_image
+#   load_prompt_with_subst "verbose-rules.template"              # 替换所有环境变量
+#   load_prompt_with_subst "verbose-rules.template" '$BJN_BJARNE_TMP_DIR' # 仅替换指定变量
 # 注意：相对路径相对于 $PROMPTS_DIR 解析
 load_prompt_with_subst() {
     local template_file="$1"
@@ -394,100 +376,7 @@ get_verbose_output_rules() {
 }
 
 #==============================================================================
-# 安全模式功能
-#==============================================================================
-
-# 检测项目是否使用安全模式
-detect_safe_mode() {
-    if [[ -f "$DOCKERFILE" ]]; then
-        # 检查 Docker 是否可用
-        if ! command -v docker &>/dev/null; then
-            echo -e "${RED}错误: 安全模式需要 Docker 但未找到${NC}"
-            exit 1
-        fi
-
-        # 检查凭证是否存在
-        if [[ ! -f "$HOME/.claude/.credentials.json" ]]; then
-            echo -e "${RED}错误: 在 ~/.claude/.credentials.json 未找到 Claude 凭证${NC}"
-            echo -e "请先在主机上运行 'claude' 进行认证"
-            exit 1
-        fi
-
-        SAFE_MODE=true
-        # 从当前目录生成镜像名称
-        PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
-        IMAGE_NAME="bjarne-${PROJECT_NAME}"
-    fi
-}
-
-# 如果需要，构建 Docker 镜像
-build_docker_image() {
-    local force_rebuild="$1"
-
-    if [[ "$force_rebuild" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
-        echo -e "${CYAN}正在构建 Docker 镜像: $IMAGE_NAME${NC}"
-        docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" . || {
-            echo -e "${RED}Docker 构建失败${NC}"
-            exit 1
-        }
-        echo -e "${GREEN}镜像构建成功${NC}"
-    else
-        echo -e "${CYAN}使用缓存的镜像: $IMAGE_NAME${NC}"
-    fi
-}
-
-# 为检测到的技术栈获取合适的 Docker 基础镜像
-get_BJN_base_image() {
-    if [[ -f "package.json" ]]; then
-        echo "node:22-bookworm"
-    elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
-        echo "python:3.12-bookworm"
-    elif [[ -f "Cargo.toml" ]]; then
-        echo "rust:1-bookworm"
-    elif [[ -f "go.mod" ]]; then
-        echo "golang:1.23-bookworm"
-    elif [[ -f "composer.json" ]]; then
-        echo "php:8.4-cli-bookworm"
-    elif [[ -f "pubspec.yaml" ]]; then
-        echo "dart:stable"
-    else
-        # 默认使用 Node，因为它包含 Claude Code 所需的 npm
-        echo "node:22-bookworm"
-    fi
-}
-
-# 获取技术特定依赖的卷挂载
-get_dep_volume() {
-    local project_name="$1"
-
-    if [[ -f "package.json" ]]; then
-        echo "${project_name}-node-modules:/workspace/node_modules"
-    elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
-        echo "${project_name}-venv:/workspace/.venv"
-    elif [[ -f "Cargo.toml" ]]; then
-        echo "${project_name}-target:/workspace/target"
-    elif [[ -f "go.mod" ]]; then
-        echo "${project_name}-gopath:/go"
-    elif [[ -f "composer.json" ]]; then
-        echo "${project_name}-vendor:/workspace/vendor"
-    else
-        echo ""
-    fi
-}
-
-# 为安全模式生成 Dockerfile
-generate_dockerfile() {
-    local BJN_base_image=$(get_BJN_base_image)
-
-    mkdir -p "$BJARNE_DIR"
-
-    load_prompt_with_subst "dockerfile.template" > "$DOCKERFILE"
-
-    echo -e "  - 已生成 $DOCKERFILE (基础镜像: $BJN_base_image)"
-}
-
-#==============================================================================
-# Git/GH 检测功能（用于 task 命令）
+# Git/GH 检测功能
 #==============================================================================
 
 # 检测 git 是否可用以及我们是否在仓库中
@@ -608,47 +497,12 @@ run_claude() {
             echo "------------------------------------------------------------------------------"
         } > "$claude_log_file"
 
-        # 使用 tee 运行 claude，实时输出到屏幕和文件
-        if [[ "$SAFE_MODE" == true ]]; then
-            # 在 Docker 容器中运行（作为 'bjarne' 用户，而非 root）
-            local docker_args="-v $(pwd):/workspace"
-            docker_args+=" -v $HOME/.claude/.credentials.json:/home/bjarne/.claude/.credentials.json:ro"
-
-            # 如果可用，添加 gh CLI 配置（用于任务模式中的 PR 创建）
-            if [[ -d "$HOME/.config/gh" ]]; then
-                docker_args+=" -v $HOME/.config/gh:/home/bjarne/.config/gh:ro"
-            fi
-
-            # 如果可用，添加 gitconfig（用于提交）
-            if [[ -f "$HOME/.gitconfig" ]]; then
-                docker_args+=" -v $HOME/.gitconfig:/home/bjarne/.gitconfig:ro"
-            fi
-
-            # 如果适用，添加依赖卷
-            local dep_volume=$(get_dep_volume "$PROJECT_NAME")
-            if [[ -n "$dep_volume" ]]; then
-                docker_args+=" -v $dep_volume"
-            fi
-
-            # 挂载临时文件夹用于详细输出日志（容器内路径相同）
-            docker_args+=" -v $BJN_BJARNE_TMP_DIR:$BJN_BJARNE_TMP_DIR"
-
-            # 运行并使用 jq 格式化 JSON 输出，同时保存原始输出到日志
-            {
-                docker run --rm --user "$(id -u):$(id -g)" -e HOME=/home/bjarne \
-                    $docker_args -w /workspace "$IMAGE_NAME" \
-                    claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1
-            } | tee -a "$claude_log_file" | process_json_stream
-            # 从管道获取退出码（使用 PIPESTATUS）
-            exit_code=${PIPESTATUS[0]}
-        else
-            # 在主机上运行，使用 jq 格式化 JSON 输出，同时保存原始输出到日志
-            {
-                claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1
-            } | tee -a "$claude_log_file" | process_json_stream
-            # 从管道获取退出码
-            exit_code=${PIPESTATUS[0]}
-        fi
+        # 在主机上运行，使用 jq 格式化 JSON 输出，同时保存原始输出到日志
+        {
+            claude --verbose -p  --output-format stream-json --dangerously-skip-permissions "$prompt" 2>&1
+        } | tee -a "$claude_log_file" | process_json_stream
+        # 从管道获取退出码
+        exit_code=${PIPESTATUS[0]}
 
         # 写入日志尾部
         {
@@ -698,25 +552,15 @@ run_claude() {
 # INIT 命令 - 从想法文件引导项目（适用于新项目或现有项目）
 #==============================================================================
 if [[ "$1" == "init" ]]; then
-    # 解析 --safe 标志（固定使用 idea.md 文件）
-    INIT_SAFE_MODE=false
     IDEA_FILE="idea.md"
 
     shift  # 从参数中删除 "init"
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --safe)
-                INIT_SAFE_MODE=true
-                shift
-                ;;
-            *)
-                echo -e "${RED}错误: 不支持的参数 '$1'${NC}"
-                echo -e "${YELLOW}用法: bjarne init [--safe]${NC}"
-                echo -e "${YELLOW}init 命令固定使用 idea.md 文件，无需指定文件名${NC}"
-                exit 1
-                ;;
-        esac
-    done
+    if [[ $# -gt 0 ]]; then
+        echo -e "${RED}错误: 不支持的参数 '$1'${NC}"
+        echo -e "${YELLOW}用法: bjarne init${NC}"
+        echo -e "${YELLOW}init 命令固定使用 idea.md 文件，无需指定文件名${NC}"
+        exit 1
+    fi
 
     if [[ ! -f "$IDEA_FILE" ]]; then
         echo -e "${RED}错误: 未找到 $IDEA_FILE 文件${NC}"
@@ -726,7 +570,7 @@ if [[ "$1" == "init" ]]; then
         echo "  echo '# 我的项目想法' > idea.md"
         echo "  或者使用你喜欢的编辑器创建 idea.md"
         echo ""
-        echo -e "${YELLOW}然后运行: bjarne init [--safe]${NC}"
+        echo -e "${YELLOW}然后运行: bjarne init${NC}"
         exit 1
     fi
 
@@ -740,50 +584,12 @@ if [[ "$1" == "init" ]]; then
         echo -e "  - $CONTEXT_FILE"
         echo -e "  - $TASK_FILE"
         [[ -d "$SPECS_DIR" ]] && echo -e "  - $SPECS_DIR/"
-
-        # 如果使用了 --safe 标志，则生成 Docker 配置
-        if [[ "$INIT_SAFE_MODE" == true ]]; then
-            echo -e "${CYAN}正在为安全模式生成 Docker 配置...${NC}"
-            generate_dockerfile
-
-            # 将 .bjarne 添加到 .gitignore（如果尚未添加）
-            if [[ -f ".gitignore" ]]; then
-                if ! grep -q "^\.bjarne/" ".gitignore" 2>/dev/null; then
-                    echo ".bjarne/" >> ".gitignore"
-                fi
-            else
-                echo ".bjarne/" > ".gitignore"
-            fi
-            echo -e "  - Added .bjarne/ to .gitignore"
-
-            echo ""
-            echo -e "${GREEN}安全模式已启用!${NC}"
-            echo -e "容器将只能访问此项目目录。"
-        fi
-
         echo ""
         echo -e "${CYAN}运行 'bjarne' 开始开发${NC}"
     else
         echo -e "${RED}初始化不完整 - 请检查上方输出${NC}"
     fi
 
-    exit 0
-fi
-
-#==============================================================================
-# REBUILD 命令 - 强制重新构建 Docker 镜像
-#==============================================================================
-if [[ "$1" == "--rebuild" ]]; then
-    detect_safe_mode
-
-    if [[ "$SAFE_MODE" != true ]]; then
-        echo -e "${RED}错误: 不是安全模式项目 (未找到 $DOCKERFILE)${NC}"
-        echo -e "运行 'bjarne init --safe' 启用安全模式"
-        exit 1
-    fi
-
-    echo -e "${CYAN}正在重新构建 Docker 镜像...${NC}"
-    build_docker_image "true"
     exit 0
 fi
 
@@ -887,17 +693,9 @@ if [[ ! -f "$CONTEXT_FILE" ]]; then
     echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
 fi
 
-# 检测并设置安全模式（如果适用）
-detect_safe_mode
-if [[ "$SAFE_MODE" == true ]]; then
-    echo -e "${CYAN}检测到安全模式 (找到 .bjarne/Dockerfile)${NC}"
-    build_docker_image "false"
-    echo ""
-fi
-
 # 记录会话开始
 log "INFO" "=== Bjarne 会话开始 ==="
-log "INFO" "最大迭代次数: $MAX_ITERATIONS, 安全模式: $SAFE_MODE, 起始阶段: $START_PHASE"
+log "INFO" "最大迭代次数: $MAX_ITERATIONS, 起始阶段: $START_PHASE"
 log "INFO" "工作目录: $(pwd)"
 
 echo -e "${CYAN}Bjarne 启动中 - 最多 $MAX_ITERATIONS 轮迭代${NC}"
