@@ -595,13 +595,14 @@ if [[ "$1" == "refresh" ]]; then
 
     NOTES_CONTENT=$(cat "$NOTES_FILE")
 
-    run_claude "# 用户的笔记:
+    run_claude "$REFRESH_PROMPT
+---
+# 用户的笔记:
 
 $NOTES_CONTENT
-
 ---
 
-$REFRESH_PROMPT" "REFRESH"
+" "REFRESH"
 
     # 显示结果
     NEW_TASKS=$(grep -c '^\s*- \[ \]' "$TASK_FILE" 2>/dev/null || echo "0")
