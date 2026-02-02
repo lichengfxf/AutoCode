@@ -49,9 +49,10 @@ NC='\033[0m'
 TASK_FILE="TASKS.md"
 CONTEXT_FILE="CONTEXT.md"
 SPECS_DIR="specs"
-TASK_STATE="bjn_task.plan"
-TASK_STATE_PLAN="bjn_task.plan"
-TASK_STATE_REVIEW="bjn_task.review"
+TASK_STATE_PLAN=".bjarne/task/bjn_task.plan"
+TASK_STATE_EXEC=".bjarne/task/bjn_task.exec"
+TASK_STATE_REVIEW=".bjarne/task/bjn_task.review"
+TASK_STATE_FIX=".bjarne/task/bjn_task.fix"
 
 # 重试设置
 MAX_RETRIES=5
@@ -249,12 +250,6 @@ log_failure() {
         echo "=== 实际发送的 PROMPT ==="
         echo "$prompt"
         echo ""
-        echo "=== 当前 .task 文件 (如果存在) ==="
-        if [[ -f "$TASK_STATE" ]]; then
-            cat "$TASK_STATE"
-        else
-            echo "(无 .task 文件)"
-        fi
     } > "$fail_file"
 
     log "ERROR" "故障已记录到 $fail_file"
@@ -757,6 +752,9 @@ if [[ ! -f "$TASK_FILE" ]]; then
     exit 1
 fi
 
+# 确保任务状态目录存在
+mkdir -p "$(dirname "$TASK_STATE_PLAN")"
+
 if [[ ! -f "$CONTEXT_FILE" ]]; then
     echo -e "${YELLOW}警告: 未找到 $CONTEXT_FILE${NC}"
 fi
@@ -781,7 +779,6 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     # 检查剩余任务
     if ! grep -q '^\s*- \[ \]' "$TASK_FILE"; then
         echo -e "${GREEN}所有任务已完成!${NC}"
-        rm -f "$TASK_STATE"
         clear_state  # 清除状态文件
         exit 0
     fi
