@@ -14,6 +14,6 @@ function log_to_wechat() {
                 -d " { \"msgtype\": \"text\", \"text\": { \"content\": \"$msg\"} }"
 }
 
-log_to_wechat "$1 $2 $3"
+log_to_wechat $*
 
 exit 0

@@ -303,7 +303,7 @@ call_plugins_phase() {
     # 执行每个插件
     for plugin in "${plugins[@]}"; do
         local plugin_name=$(basename "$plugin")
-        log "INFO" "执行插件: $plugin_name"
+        log "INFO" "执行插件: $plugin_name $*"
 
         # 创建插件日志文件
         local plugin_log_dir="$PLUGINS_DIR/log"
@@ -312,8 +312,8 @@ call_plugins_phase() {
 
         # 执行插件并捕获输出
         chmod +x $plugin
-        echo "$plugin \"$timestamp\" \"$phase\" \"$task_desc\" " >> $plugin_log
-        $plugin \"$timestamp\" \"$phase\" \"$task_desc\" >> $plugin_log 2>&1
+        $plugin $* >> $plugin_log 2>&1
+        echo "" >> $plugin_log
     done
 }
 
@@ -340,7 +340,7 @@ save_state() {
         fi
     } > "$STATE_FILE"
 
-    log "INFO" "状态已保存: phase=$phase, timestamp=$timestamp"
+    log "INFO" "状态已保存: phase=$phase, timestamp=$timestamp task=$task_desc"
 
     call_plugins_phase $timestamp  $phase   $task_desc
 }
