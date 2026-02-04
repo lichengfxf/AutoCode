@@ -210,6 +210,7 @@ cleanup_temp() {
     if [[ -d "$BJN_BJARNE_TMP_DIR" ]]; then
         rm -rf "$BJN_BJARNE_TMP_DIR"
     fi
+    exit 1
 }
 
 # 捕获信号以确保在退出时清理（正常、中断、终止）
